@@ -23,23 +23,18 @@ class Owner(BaseModel):
 
     class Config:
         from_attributes = True
-class Client(BaseModel):
-    id: int
-    person_id: int
-    person: PersonBase
-
-    class Config:
-        from_attributes = True
-class Client(BaseModel):
-    id: int
-    person_id: int
-    person: PersonBase
-
-    class Config:
-        from_attributes = True
-
 class ClientCreate(BaseModel):
+    first_name: str
+    last_name: str
+    email: Optional[str] = None
+    phone: str
+class Client(BaseModel):
+    id: int
     person_id: int
+    person: PersonBase
+
+    class Config:
+        from_attributes = True
 
 class HotelCreate(BaseModel):
     name: str
@@ -58,3 +53,14 @@ class BookingCreate(BaseModel):
     room_id: int
     date_start: date
     date_end: date
+    total_price: float
+class Booking(BaseModel):
+    id: int
+    client_id: int
+    room_id: int
+    date_start: date
+    date_end: date
+    total_price: float
+
+    class Config:
+        from_attributes = True

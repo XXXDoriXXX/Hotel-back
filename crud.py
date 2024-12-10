@@ -1,5 +1,7 @@
 from sqlalchemy.orm import Session
 from models import Person, Owner, Client, Hotel, Room, Booking
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy import and_
 
 def create_person(db: Session, person: dict):
     db_person = Person(**person)
@@ -30,10 +32,21 @@ def create_owner(db: Session, owner_data: dict):
 
 
 def create_client(db: Session, client: dict):
-    db_client = Client(**client)
+    db_person = Person(
+        first_name=client["first_name"],
+        last_name=client["last_name"],
+        email=client["email"],
+        phone=client["phone"],
+    )
+    db.add(db_person)
+    db.commit()
+    db.refresh(db_person)
+
+    db_client = Client(person_id=db_person.id)
     db.add(db_client)
     db.commit()
     db.refresh(db_client)
+
     return db_client
 
 def create_hotel(db: Session, hotel: dict):
@@ -50,9 +63,33 @@ def create_room(db: Session, room: dict):
     db.refresh(db_room)
     return db_room
 
-def create_booking(db: Session, booking: dict):
-    db_booking = Booking(**booking)
-    db.add(db_booking)
-    db.commit()
-    db.refresh(db_booking)
-    return db_booking
+def create_booking(db: Session, booking_data: dict):
+    # Перевірка доступності кімнати
+    overlapping_bookings = db.query(Booking).filter(
+        Booking.room_id == booking_data.get("room_id"),
+        and_(
+            Booking.date_start <= booking_data.get("date_end"),
+            Booking.date_end >= booking_data.get("date_start")
+        )
+    ).first()
+
+    if overlapping_bookings:
+        raise ValueError(f"Room {booking_data.get('room_id')} is already booked for the selected dates: "
+                         f"{overlapping_bookings.date_start} to {overlapping_bookings.date_end}.")
+
+    # Створення бронювання
+    try:
+        db_booking = Booking(
+            client_id=booking_data.get("client_id"),
+            room_id=booking_data.get("room_id"),
+            date_start=booking_data.get("date_start"),
+            date_end=booking_data.get("date_end"),
+            total_price=booking_data.get("total_price"),
+        )
+        db.add(db_booking)
+        db.commit()
+        db.refresh(db_booking)
+        return db_booking
+    except Exception as e:
+        db.rollback()
+        raise ValueError(f"Error creating booking: {str(e)}")
