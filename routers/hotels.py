@@ -27,3 +27,10 @@ def get_hotel(hotel_id: int, db: Session = Depends(get_db)):
     if not hotel:
         raise HTTPException(status_code=404, detail="Hotel not found")
     return hotel
+@router.delete("/{hotel_id}")
+def delete_hotel(hotel_id: int, db: Session = Depends(get_db)):
+    try:
+        deleted_hotel = crud.delete_record(db, Hotel, hotel_id)
+        return deleted_hotel
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))

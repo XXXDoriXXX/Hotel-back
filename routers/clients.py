@@ -20,3 +20,11 @@ def create_client(client: ClientCreate, db: Session = Depends(get_db)):
 @router.get("/")
 def get_all_clients(db: Session = Depends(get_db)):
     return db.query(Client).all()
+@router.delete("/{client_id}")
+def delete_client(client_id: int, db: Session = Depends(get_db)):
+
+    try:
+        deleted_client = crud.delete_record(db, Client, client_id)
+        return deleted_client
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))

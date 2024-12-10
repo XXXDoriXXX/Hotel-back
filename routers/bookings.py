@@ -49,3 +49,11 @@ def get_booking(booking_id: int, db: Session = Depends(get_db)):
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
     return booking
+@router.delete("/{booking_id}")
+def delete_booking(booking_id: int, db: Session = Depends(get_db)):
+
+    try:
+        deleted_booking = crud.delete_record(db, Booking, booking_id)
+        return deleted_booking
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))

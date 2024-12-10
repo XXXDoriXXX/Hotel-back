@@ -20,3 +20,11 @@ def create_owner(owner: OwnerCreate, db: Session = Depends(get_db)):
 @router.get("/")
 def get_all_owners(db: Session = Depends(get_db)):
     return db.query(Owner).all()
+@router.delete("/{owner_id}")
+def delete_owner(owner_id: int, db: Session = Depends(get_db)):
+
+    try:
+        result = crud.delete_record(db, Owner, owner_id)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))

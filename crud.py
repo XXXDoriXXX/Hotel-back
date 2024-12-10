@@ -93,3 +93,10 @@ def create_booking(db: Session, booking_data: dict):
     except Exception as e:
         db.rollback()
         raise ValueError(f"Error creating booking: {str(e)}")
+def delete_record(db: Session, model, record_id: int):
+    record = db.query(model).filter(model.id == record_id).first()
+    if not record:
+        raise ValueError(f"Record with id {record_id} not found.")
+    db.delete(record)
+    db.commit()
+    return record
