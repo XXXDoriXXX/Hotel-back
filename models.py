@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Date, Float, ForeignKey
+from sqlalchemy import Column, Integer, String, Date, Float, ForeignKey, Boolean
 from sqlalchemy.orm import relationship
 from database import Base
 
@@ -10,10 +10,10 @@ class Person(Base):
     last_name = Column(String, nullable=False)
     email = Column(String, nullable=True)
     phone = Column(String, nullable=False)
-
+    password = Column(String, nullable=False)
+    is_owner = Column(Boolean, default=False, nullable=False)  # Нове поле
     owner = relationship('Owner', uselist=False, back_populates='person')
     client = relationship('Client', uselist=False, back_populates='person')
-
 class Owner(Base):
     __tablename__ = 'owners'
 
