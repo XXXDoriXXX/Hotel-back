@@ -10,7 +10,15 @@ class BookingDetails(BaseModel):
 
     class Config:
         from_attributes = True
-
+class PersonBase(BaseModel):
+    id: int
+    first_name: str
+    last_name: str
+    email: Optional[str]
+    phone: str
+    is_owner: bool
+    class Config:
+        from_attributes = True
 class RoomDetails(BaseModel):
     id: int
     room_number: str
@@ -37,12 +45,6 @@ class LoginRequest(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str
-
-class PersonBase(BaseModel):
-    first_name: str
-    last_name: str
-    email: Optional[str]
-    phone: str
 
 class PersonCreate(PersonBase):
     password: str
