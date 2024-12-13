@@ -1,15 +1,50 @@
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import date
+class ClientDetails(BaseModel):
+    id: int
+    first_name: str
+    last_name: str
+    email: Optional[str]
+    phone: str
+
+    class Config:
+        from_attributes = True
+
 class BookingDetails(BaseModel):
     id: int
     client_id: int
-    date_start: date
-    date_end: date
+    client: "ClientDetails"
+    date_start: str  # Конвертація дати у рядок
+    date_end: str  # Конвертація дати у рядок
     total_price: float
 
     class Config:
         from_attributes = True
+        json_encoders = {
+            date: lambda v: v.isoformat()  # Автоматичне перетворення об'єкта date у формат YYYY-MM-DD
+        }
+
+class RoomDetails(BaseModel):
+    id: int
+    room_number: str
+    room_type: str
+    places: int
+    price_per_night: float
+    bookings: List[BookingDetails]
+
+    class Config:
+        from_attributes = True
+
+class HotelWithDetails(BaseModel):
+    id: int
+    name: str
+    address: str
+    rooms: List[RoomDetails]
+
+    class Config:
+        from_attributes = True
+
 class PersonBase(BaseModel):
     id: int
     first_name: str
@@ -19,25 +54,7 @@ class PersonBase(BaseModel):
     is_owner: bool
     class Config:
         from_attributes = True
-class RoomDetails(BaseModel):
-    id: int
-    room_number: str
-    room_type: str
-    places: int
-    price_per_night: float
-    bookings: List[BookingDetails] = []
 
-    class Config:
-        from_attributes = True
-
-class HotelWithDetails(BaseModel):
-    id: int
-    name: str
-    address: str
-    rooms: List[RoomDetails] = []
-
-    class Config:
-        from_attributes = True
 class LoginRequest(BaseModel):
     email: str
     password: str

@@ -45,7 +45,45 @@ def get_owner_hotels(current_user: dict = Depends(get_current_user), db: Session
         raise HTTPException(status_code=404, detail="Owner not found")
 
     hotels = db.query(Hotel).filter(Hotel.owner_id == owner.id).all()
-    return hotels
+
+    result = []
+    for hotel in hotels:
+        rooms = []
+        for room in hotel.rooms:
+            bookings = []
+            for booking in room.bookings:
+                client = booking.client.person
+                bookings.append({
+                    "id": booking.id,
+                    "client_id": booking.client_id,
+                    "client": {
+                        "id": client.id,
+                        "first_name": client.first_name,
+                        "last_name": client.last_name,
+                        "email": client.email,
+                        "phone": client.phone,
+                    },
+                    "date_start": booking.date_start.isoformat(),
+                    "date_end": booking.date_end.isoformat(),
+                    "total_price": booking.total_price,
+                })
+            rooms.append({
+                "id": room.id,
+                "room_number": room.room_number,
+                "room_type": room.room_type,
+                "places": room.places,
+                "price_per_night": room.price_per_night,
+                "bookings": bookings,
+            })
+        result.append({
+            "id": hotel.id,
+            "name": hotel.name,
+            "address": hotel.address,
+            "rooms": rooms,
+        })
+
+    return result
+
 @router.post("/hotels/rooms")
 def create_room(
     room: schemas.RoomCreate,
