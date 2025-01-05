@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from models import Person, Owner, Client, Hotel, Room, Booking
+from models import Person, Owner, Client, Hotel, Room, Booking, Employee
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import and_
 from passlib.context import CryptContext
@@ -36,13 +36,14 @@ def create_person(db: Session, person: dict):
         last_name=person.get("last_name"),
         email=person.get("email"),
         phone=person.get("phone"),
-        password=hashed_password  # Збереження хешованого пароля
+        password=hashed_password,
+        is_owner=person.get("is_owner", False),
+        birth_date=person.get("birth_date")
     )
     db.add(db_person)
     db.commit()
     db.refresh(db_person)
     return db_person
-
 def create_owner(db: Session, owner_data: dict):
     owner_data["is_owner"] = True
     person = create_person(db, owner_data)
@@ -76,6 +77,52 @@ def create_room(db: Session, room: dict):
     db.commit()
     db.refresh(db_room)
     return db_room
+
+
+def create_employee(db: Session, employee_data: dict):
+    # Перевірка, чи існує така людина
+    existing_person = db.query(Person).filter(Person.email == employee_data.get("email")).first()
+    if existing_person:
+        raise ValueError(f"Person with email {employee_data.get('email')} already exists.")
+
+    # Створення запису для Person
+    db_person = Person(
+        first_name=employee_data["first_name"],
+        last_name=employee_data["last_name"],
+        email=employee_data.get("email"),
+        phone=employee_data["phone"],
+        password=get_password_hash(employee_data.get("password", "default_password")),
+        birth_date=employee_data.get("birth_date")  # Дата народження
+    )
+    db.add(db_person)
+    db.commit()
+    db.refresh(db_person)
+
+    # Створення запису для Employee
+    db_employee = Employee(
+        person_id=db_person.id,
+        hotel_id=employee_data["hotel_id"],
+        position=employee_data["position"],
+        salary=employee_data["salary"],
+        work_experience=employee_data["work_experience"],
+        is_vacation=employee_data["is_vacation"]
+    )
+    db.add(db_employee)
+    db.commit()
+    db.refresh(db_employee)
+    return db_employee
+
+
+def delete_employee(db: Session, employee_id: int):
+    employee = db.query(Employee).filter(Employee.id == employee_id).first()
+    if not employee:
+        raise ValueError(f"Employee with id {employee_id} not found.")
+
+    # Видалення пов'язаного запису Person
+    db.delete(employee.person)
+    db.commit()
+    return employee
+
 
 def create_booking(db: Session, booking_data: dict):
     # Перевірка доступності кімнати

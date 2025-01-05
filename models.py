@@ -11,9 +11,11 @@ class Person(Base):
     email = Column(String, nullable=True)
     phone = Column(String, nullable=False)
     password = Column(String, nullable=False)
-    is_owner = Column(Boolean, default=False, nullable=False)  # Нове поле
+    is_owner = Column(Boolean, default=False, nullable=False)
+    birth_date = Column(Date, nullable=True)
     owner = relationship('Owner', uselist=False, back_populates='person')
     client = relationship('Client', uselist=False, back_populates='person')
+    employee = relationship('Employee', uselist=False, back_populates='person')
 class Owner(Base):
     __tablename__ = 'owners'
 
@@ -22,7 +24,19 @@ class Owner(Base):
 
     person = relationship('Person', back_populates='owner')
     hotels = relationship('Hotel', back_populates='owner', cascade='all, delete')
+class Employee(Base):
+    __tablename__ = 'employees'
 
+    id = Column(Integer, primary_key=True, index=True)
+    person_id = Column(Integer, ForeignKey('people.id'), unique=True, nullable=False)
+    hotel_id = Column(Integer, ForeignKey('hotels.id'), nullable=False)
+    position = Column(String, nullable=False)
+    salary = Column(Float, nullable=False)
+    work_experience = Column(Integer, nullable=False)
+    is_vacation = Column(Boolean, default=False)
+
+    person = relationship('Person', back_populates='employee')
+    hotel = relationship('Hotel', back_populates='employees')
 class Client(Base):
     __tablename__ = 'clients'
 
@@ -42,6 +56,7 @@ class Hotel(Base):
 
     owner = relationship('Owner', back_populates='hotels')
     rooms = relationship('Room', back_populates='hotel', cascade='all, delete')
+    employees = relationship('Employee', back_populates='hotel', cascade='all, delete')
 
 class Room(Base):
     __tablename__ = 'rooms'

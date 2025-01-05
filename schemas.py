@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List
 from datetime import date
 class ClientDetails(BaseModel):
@@ -35,13 +35,24 @@ class RoomDetails(BaseModel):
 
     class Config:
         from_attributes = True
+class EmployeeDetails(BaseModel):
+    id: int
+    first_name: str
+    last_name: str
+    email: Optional[str]
+    phone: str
+    position: str
+    salary: float
+    work_experience: int
+    is_vacation: bool
+
 
 class HotelWithDetails(BaseModel):
     id: int
     name: str
     address: str
     rooms: List[RoomDetails]
-
+    employees: List[EmployeeDetails]
     class Config:
         from_attributes = True
 
@@ -52,6 +63,7 @@ class PersonBase(BaseModel):
     email: Optional[str]
     phone: str
     is_owner: bool
+    birth_date: Optional[date]
     class Config:
         from_attributes = True
 
@@ -64,7 +76,13 @@ class Token(BaseModel):
     token_type: str
 
 class PersonCreate(PersonBase):
+    first_name: str
+    last_name: str
+    email: Optional[str]
+    phone: str
     password: str
+    is_owner: Optional[bool] = False
+    birth_date: Optional[date]
 class OwnerCreate(BaseModel):
     first_name: str
     last_name: str
@@ -126,5 +144,24 @@ class Booking(BaseModel):
 
     class Config:
         from_attributes = True
+class EmployeeBase(BaseModel):
+    position: str
+    salary: float
+    work_experience: int
+    is_vacation: bool = False
 
+
+class EmployeeCreate(PersonBase):
+    hotel_id: int
+    position: str
+    salary: float
+    work_experience: int
+    is_vacation: bool
+
+class Employee(EmployeeBase):
+    employee_id: int = Field(alias="id")
+    person: PersonBase
+
+    class Config:
+        from_attributes = True
 

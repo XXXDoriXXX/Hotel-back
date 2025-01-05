@@ -75,13 +75,31 @@ def get_owner_hotels(current_user: dict = Depends(get_current_user), db: Session
                 "price_per_night": room.price_per_night,
                 "bookings": bookings,
             })
+
+        # Додати працівників готелю
+        employees = []
+        for employee in hotel.employees:
+            person = employee.person
+            employees.append({
+                "id": employee.id,
+                "first_name": person.first_name,
+                "last_name": person.last_name,
+                "email": person.email,
+                "phone": person.phone,
+                "position": employee.position,
+                "salary": employee.salary,
+                "work_experience": employee.work_experience,
+                "is_vacation": employee.is_vacation,
+             
+            })
+
         result.append({
             "id": hotel.id,
             "name": hotel.name,
             "address": hotel.address,
             "rooms": rooms,
+            "employees": employees,
         })
-
     return result
 
 @router.post("/hotels/rooms")
