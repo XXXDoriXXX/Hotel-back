@@ -1,5 +1,7 @@
+import os
+
 from sqlalchemy.orm import Session
-from models import Person, Owner, Client, Hotel, Room, Booking, Employee
+from models import Person, Owner, Client, Hotel, Room, Booking, Employee, HotelImage, RoomImage
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import and_
 from passlib.context import CryptContext
@@ -9,6 +11,20 @@ def get_password_hash(password):
     return pwd_context.hash(password)
 def verify_password(plain_password, hashed_password):
     return pwd_context.verify(plain_password, hashed_password)
+def add_hotel_image(db: Session, hotel_id: int, image_url: str):
+    hotel_image = HotelImage(hotel_id=hotel_id, image_url=image_url)
+    db.add(hotel_image)
+    db.commit()
+    db.refresh(hotel_image)
+    return hotel_image
+
+
+def add_room_image(db: Session, room_id: int, image_url: str):
+    room_image = RoomImage(room_id=room_id, image_url=image_url)
+    db.add(room_image)
+    db.commit()
+    db.refresh(room_image)
+    return room_image
 
 def authenticate_user(db: Session, email: str, password: str):
     person = db.query(Person).filter(Person.email == email).first()
@@ -30,7 +46,16 @@ def authenticate_user(db: Session, email: str, password: str):
 
 
 def create_person(db: Session, person: dict):
+    existing_user = db.query(Person).filter(
+        (Person.email == person.get("email")) |
+        (Person.phone == person.get("phone"))
+    ).first()
+
+    if existing_user:
+        raise ValueError("User with the same email or phone already exists.")
+
     hashed_password = get_password_hash(person.get("password"))
+
     db_person = Person(
         first_name=person.get("first_name"),
         last_name=person.get("last_name"),
@@ -44,6 +69,8 @@ def create_person(db: Session, person: dict):
     db.commit()
     db.refresh(db_person)
     return db_person
+
+
 def create_owner(db: Session, owner_data: dict):
     owner_data["is_owner"] = True
     person = create_person(db, owner_data)
@@ -161,3 +188,16 @@ def delete_record(db: Session, model, record_id: int):
     db.delete(record)
     db.commit()
     return record
+def delete_room_image(db: Session, image_id: int):
+
+    image = db.query(RoomImage).filter(RoomImage.id == image_id).first()
+    if not image:
+        raise ValueError("Image not found")
+
+    file_path = image.image_url.lstrip("/")
+    if os.path.exists(file_path):
+        os.remove(file_path)
+
+    # Видалення запису з бази даних
+    db.delete(image)
+    db.commit()

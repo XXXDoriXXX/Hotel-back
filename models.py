@@ -1,7 +1,22 @@
 from sqlalchemy import Column, Integer, String, Date, Float, ForeignKey, Boolean
 from sqlalchemy.orm import relationship
 from database import Base
+class HotelImage(Base):
+    __tablename__ = "hotel_images"
 
+    id = Column(Integer, primary_key=True, index=True)
+    hotel_id = Column(Integer, ForeignKey("hotels.id"), nullable=False)
+    image_url = Column(String, nullable=False)
+
+    hotel = relationship("Hotel", back_populates="images")
+class RoomImage(Base):
+    __tablename__ = "room_images"
+
+    id = Column(Integer, primary_key=True, index=True)
+    room_id = Column(Integer, ForeignKey("rooms.id"), nullable=False)
+    image_url = Column(String, nullable=False)
+
+    room = relationship("Room", back_populates="images")
 class Person(Base):
     __tablename__ = 'people'
 
@@ -57,6 +72,7 @@ class Hotel(Base):
     owner = relationship('Owner', back_populates='hotels')
     rooms = relationship('Room', back_populates='hotel', cascade='all, delete')
     employees = relationship('Employee', back_populates='hotel', cascade='all, delete')
+    images = relationship('HotelImage', back_populates='hotel', cascade='all, delete')  # Додано
 
 class Room(Base):
     __tablename__ = 'rooms'
@@ -70,6 +86,7 @@ class Room(Base):
 
     hotel = relationship('Hotel', back_populates='rooms')
     bookings = relationship('Booking', back_populates='room', cascade='all, delete')
+    images = relationship('RoomImage', back_populates='room', cascade='all, delete')  # Додано
 
 class Booking(Base):
     __tablename__ = 'bookings'

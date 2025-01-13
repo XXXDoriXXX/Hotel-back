@@ -1,6 +1,22 @@
 from pydantic import BaseModel, Field
 from typing import Optional, List
 from datetime import date
+class HotelImageBase(BaseModel):
+    id: int
+    hotel_id: int
+    image_url: str
+
+    class Config:
+        from_attributes = True
+
+
+class RoomImageBase(BaseModel):
+    id: int
+    room_id: int
+    image_url: str
+
+    class Config:
+        from_attributes = True
 class ClientDetails(BaseModel):
     id: int
     first_name: str
@@ -15,14 +31,14 @@ class BookingDetails(BaseModel):
     id: int
     client_id: int
     client: "ClientDetails"
-    date_start: str  # Конвертація дати у рядок
-    date_end: str  # Конвертація дати у рядок
+    date_start: str
+    date_end: str
     total_price: float
 
     class Config:
         from_attributes = True
         json_encoders = {
-            date: lambda v: v.isoformat()  # Автоматичне перетворення об'єкта date у формат YYYY-MM-DD
+            date: lambda v: v.isoformat()
         }
 
 class RoomDetails(BaseModel):
@@ -31,10 +47,12 @@ class RoomDetails(BaseModel):
     room_type: str
     places: int
     price_per_night: float
+    images: List[RoomImageBase]
     bookings: List[BookingDetails]
 
     class Config:
         from_attributes = True
+
 class EmployeeDetails(BaseModel):
     id: int
     first_name: str
@@ -51,10 +69,14 @@ class HotelWithDetails(BaseModel):
     id: int
     name: str
     address: str
+    images: List[HotelImageBase]
     rooms: List[RoomDetails]
     employees: List[EmployeeDetails]
+
+
     class Config:
         from_attributes = True
+
 
 class PersonBase(BaseModel):
     id: int

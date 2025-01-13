@@ -48,58 +48,71 @@ def get_owner_hotels(current_user: dict = Depends(get_current_user), db: Session
 
     result = []
     for hotel in hotels:
+
         rooms = []
         for room in hotel.rooms:
-            bookings = []
-            for booking in room.bookings:
-                client = booking.client.person
-                bookings.append({
+            room_images = [
+                {"id": image.id, "room_id": image.room_id, "image_url": image.image_url}
+                for image in room.images
+            ]
+            bookings = [
+                {
                     "id": booking.id,
                     "client_id": booking.client_id,
                     "client": {
-                        "id": client.id,
-                        "first_name": client.first_name,
-                        "last_name": client.last_name,
-                        "email": client.email,
-                        "phone": client.phone,
+                        "id": booking.client.person.id,
+                        "first_name": booking.client.person.first_name,
+                        "last_name": booking.client.person.last_name,
+                        "email": booking.client.person.email,
+                        "phone": booking.client.person.phone,
                     },
                     "date_start": booking.date_start.isoformat(),
                     "date_end": booking.date_end.isoformat(),
                     "total_price": booking.total_price,
-                })
+                }
+                for booking in room.bookings
+            ]
             rooms.append({
                 "id": room.id,
                 "room_number": room.room_number,
                 "room_type": room.room_type,
                 "places": room.places,
                 "price_per_night": room.price_per_night,
+                "images": room_images,
                 "bookings": bookings,
             })
 
-        # Додати працівників готелю
-        employees = []
-        for employee in hotel.employees:
-            person = employee.person
-            employees.append({
+        # Отримуємо зображення для готелів
+        hotel_images = [
+            {"id": image.id, "hotel_id": image.hotel_id, "image_url": image.image_url}
+            for image in hotel.images
+        ]
+
+        # Додаємо працівників
+        employees = [
+            {
                 "id": employee.id,
-                "first_name": person.first_name,
-                "last_name": person.last_name,
-                "email": person.email,
-                "phone": person.phone,
+                "first_name": employee.person.first_name,
+                "last_name": employee.person.last_name,
+                "email": employee.person.email,
+                "phone": employee.person.phone,
                 "position": employee.position,
                 "salary": employee.salary,
                 "work_experience": employee.work_experience,
                 "is_vacation": employee.is_vacation,
-             
-            })
+            }
+            for employee in hotel.employees
+        ]
 
         result.append({
             "id": hotel.id,
             "name": hotel.name,
             "address": hotel.address,
+            "images": hotel_images,
             "rooms": rooms,
             "employees": employees,
         })
+
     return result
 
 @router.post("/hotels/rooms")
@@ -118,23 +131,15 @@ def get_owner_dashboard(current_user: dict = Depends(get_current_user), db: Sess
     if not current_user["is_owner"]:
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    # Знайти власника
     owner = db.query(Owner).filter(Owner.person_id == current_user["id"]).first()
     if not owner:
         raise HTTPException(status_code=404, detail="Owner not found")
 
-    # Отримати всі готелі власника
     hotels = db.query(Hotel).filter(Hotel.owner_id == owner.id).all()
 
-    # Включити кімнати і бронювання
     dashboard = []
     for hotel in hotels:
-        hotel_details = {
-            "id": hotel.id,
-            "name": hotel.name,
-            "address": hotel.address,
-            "rooms": []
-        }
+        rooms = []
         for room in hotel.rooms:
             room_details = {
                 "id": room.id,
@@ -142,18 +147,55 @@ def get_owner_dashboard(current_user: dict = Depends(get_current_user), db: Sess
                 "room_type": room.room_type,
                 "places": room.places,
                 "price_per_night": room.price_per_night,
+                "images": [
+                    {"id": image.id, "room_id": image.room_id, "image_url": image.image_url}
+                    for image in room.images
+                ],
                 "bookings": [
                     {
                         "id": booking.id,
                         "client_id": booking.client_id,
-                        "date_start": booking.date_start,
-                        "date_end": booking.date_end,
-                        "total_price": booking.total_price
+                        "client": {
+                            "id": booking.client.person.id,
+                            "first_name": booking.client.person.first_name,
+                            "last_name": booking.client.person.last_name,
+                            "email": booking.client.person.email,
+                            "phone": booking.client.person.phone,
+                        },
+                        "date_start": booking.date_start.isoformat(),
+                        "date_end": booking.date_end.isoformat(),
+                        "total_price": booking.total_price,
                     }
                     for booking in room.bookings
-                ]
+                ],
             }
-            hotel_details["rooms"].append(room_details)
+            rooms.append(room_details)
+
+        hotel_details = {
+            "id": hotel.id,
+            "name": hotel.name,
+            "address": hotel.address,
+            "images": [
+                {"id": image.id, "hotel_id": image.hotel_id, "image_url": image.image_url}
+                for image in hotel.images
+            ],
+            "rooms": rooms,
+            "employees": [
+                {
+                    "id": employee.id,
+                    "first_name": employee.person.first_name,
+                    "last_name": employee.person.last_name,
+                    "email": employee.person.email,
+                    "phone": employee.person.phone,
+                    "position": employee.position,
+                    "salary": employee.salary,
+                    "work_experience": employee.work_experience,
+                    "is_vacation": employee.is_vacation,
+                }
+                for employee in hotel.employees
+            ],
+        }
         dashboard.append(hotel_details)
 
     return dashboard
+
