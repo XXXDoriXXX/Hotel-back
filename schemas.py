@@ -69,14 +69,16 @@ class HotelWithDetails(BaseModel):
     id: int
     name: str
     address: str
+    rating: float
+    rating_count: int
+    views: int
+    amenities: List[str]
     images: List[HotelImageBase]
     rooms: List[RoomDetails]
     employees: List[EmployeeDetails]
 
-
     class Config:
         from_attributes = True
-
 
 class PersonBase(BaseModel):
     id: int
@@ -142,6 +144,10 @@ class HotelCreate(BaseModel):
     name: str
     address: str
     owner_id: int
+    rating: Optional[float] = 0.0
+    rating_count: Optional[int] = 0
+    views: Optional[int] = 0
+    amenities: Optional[List[str]] = []
 
 class RoomCreate(BaseModel):
     room_number: str

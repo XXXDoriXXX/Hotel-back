@@ -6,7 +6,7 @@ from database import get_db
 def hash_all_passwords(db: Session):
     people = db.query(Person).all()
     for person in people:
-        if person.password == "default_password":  # Перевірка, щоб не хешувати хешовані паролі
+        if person.password == "default_password":
             person.password = get_password_hash(person.password)
     db.commit()
     print("Паролі успішно хешовані.")

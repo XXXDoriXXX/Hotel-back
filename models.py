@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Date, Float, ForeignKey, Boolean
+from sqlalchemy import Column, Integer, String, Date, Float, ForeignKey, Boolean, JSON
 from sqlalchemy.orm import relationship
 from database import Base
 class HotelImage(Base):
@@ -28,6 +28,7 @@ class Person(Base):
     password = Column(String, nullable=False)
     is_owner = Column(Boolean, default=False, nullable=False)
     birth_date = Column(Date, nullable=True)
+    ratings = relationship("Rating", back_populates="user", cascade="all, delete")
     owner = relationship('Owner', uselist=False, back_populates='person')
     client = relationship('Client', uselist=False, back_populates='person')
     employee = relationship('Employee', uselist=False, back_populates='person')
@@ -68,6 +69,12 @@ class Hotel(Base):
     name = Column(String, nullable=False)
     address = Column(String, nullable=False)
     owner_id = Column(Integer, ForeignKey('owners.id'), nullable=False)
+    rating = Column(Float, default=0)
+    rating_count = Column(Integer, default=0)
+    views = Column(Integer, default=0)
+    amenities = Column(JSON, default=list)
+
+    ratings = relationship("Rating", back_populates="hotel", cascade="all, delete")
     owner = relationship('Owner', back_populates='hotels')
     rooms = relationship('Room', back_populates='hotel', cascade='all, delete')
     employees = relationship('Employee', back_populates='hotel', cascade='all, delete')
@@ -99,3 +106,13 @@ class Booking(Base):
 
     client = relationship('Client', back_populates='bookings')
     room = relationship('Room', back_populates='bookings')
+class Rating(Base):
+    __tablename__ = "ratings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("people.id"), nullable=False)
+    hotel_id = Column(Integer, ForeignKey("hotels.id"), nullable=False)
+    rating = Column(Float, nullable=False)
+
+    user = relationship("Person", back_populates="ratings")
+    hotel = relationship("Hotel", back_populates="ratings")

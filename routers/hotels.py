@@ -1,12 +1,14 @@
 import os
+from typing import List
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from database import get_db
 from dependencies import get_current_user, is_hotel_owner
 from schemas import HotelCreate
-from models import Hotel, HotelImage
+from models import Hotel, HotelImage, Rating
 import crud
 
 router = APIRouter(
@@ -26,16 +28,12 @@ def get_all_hotels_with_details(db: Session = Depends(get_db)):
     hotels = db.query(Hotel).all()
     result = []
     for hotel in hotels:
-        # Отримання зображень готелю
         hotel_images = [
             {"id": image.id, "image_url": image.image_url}
             for image in hotel.images
         ]
-
-        # Отримання кімнат готелю
         rooms = []
         for room in hotel.rooms:
-            # Отримання зображень кімнати
             room_images = [
                 {"id": image.id, "image_url": image.image_url}
                 for image in room.images
@@ -54,7 +52,10 @@ def get_all_hotels_with_details(db: Session = Depends(get_db)):
             "name": hotel.name,
             "address": hotel.address,
             "images": hotel_images,
-            "rooms": rooms
+            "rooms": rooms,
+            "rating":hotel.rating,
+            "rating_count":hotel.rating_count,
+            "views": hotel.views
         })
     return result
 
@@ -132,3 +133,101 @@ def delete_hotel_image(
 def get_hotel_images(hotel_id: int, db: Session = Depends(get_db)):
     images = db.query(HotelImage).filter(HotelImage.hotel_id == hotel_id).all()
     return images
+@router.put("/{hotel_id}/amenities")
+def update_amenities(
+    hotel_id: int,
+    amenities: List[str],
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    hotel = db.query(Hotel).filter(Hotel.id == hotel_id).first()
+    if not hotel:
+        raise HTTPException(status_code=404, detail="Hotel not found")
+    if hotel.owner_id != current_user.get("id"):
+        raise HTTPException(status_code=403, detail="Not authorized to modify this hotel")
+    existing_amenities = set(hotel.amenities or [])
+    new_amenities = set(amenities)
+
+    if existing_amenities.intersection(new_amenities):
+        raise HTTPException(status_code=400, detail="Some amenities already exist")
+
+    hotel.amenities = list(existing_amenities.union(new_amenities))
+    db.commit()
+    db.refresh(hotel)
+
+    return {
+        "message": "Amenities updated successfully",
+        "amenities": hotel.amenities
+    }
+@router.post("/{hotel_id}/view")
+def increment_views(
+    hotel_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    if current_user.get("is_owner"):
+        raise HTTPException(status_code=403, detail="Only clients can add views")
+
+    hotel = db.query(Hotel).filter(Hotel.id == hotel_id).first()
+    if not hotel:
+        raise HTTPException(status_code=404, detail="Hotel not found")
+
+    hotel.views += 1
+    db.commit()
+    db.refresh(hotel)
+
+    return {
+        "message": f"Views updated successfully. Total views: {hotel.views}",
+        "views": hotel.views
+    }
+class RatingRequest(BaseModel):
+      rating: float
+
+@router.post("/{hotel_id}/rate")
+def add_rating(
+    hotel_id: int,
+    request: RatingRequest,  # Очікуємо `rating` у тілі запиту
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    user_id = current_user["id"]
+    new_rating = request.rating
+
+    if current_user.get("is_owner"):
+        raise HTTPException(status_code=403, detail="Only clients can rate hotels")
+
+    if not (1 <= new_rating <= 5):
+        raise HTTPException(status_code=400, detail="Rating must be between 1 and 5")
+
+    hotel = db.query(Hotel).filter(Hotel.id == hotel_id).first()
+    if not hotel:
+        raise HTTPException(status_code=404, detail="Hotel not found")
+
+    # Перевіряємо, чи є вже оцінка від цього користувача
+    existing_rating = db.query(Rating).filter(
+        Rating.user_id == user_id, Rating.hotel_id == hotel_id
+    ).first()
+
+    if existing_rating:
+        # Оновлюємо наявний рейтинг
+        total_rating = hotel.rating * hotel.rating_count - existing_rating.rating
+        total_rating += new_rating
+        hotel.rating = total_rating / hotel.rating_count
+        existing_rating.rating = new_rating
+    else:
+        # Додаємо новий рейтинг
+        total_rating = hotel.rating * hotel.rating_count
+        hotel.rating_count += 1
+        hotel.rating = (total_rating + new_rating) / hotel.rating_count
+
+        new_rating_entry = Rating(user_id=user_id, hotel_id=hotel_id, rating=new_rating)
+        db.add(new_rating_entry)
+
+    db.commit()
+    db.refresh(hotel)
+
+    return {
+        "message": "Rating updated successfully",
+        "rating": hotel.rating,
+        "rating_count": hotel.rating_count
+    }
