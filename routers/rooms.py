@@ -13,7 +13,8 @@ router = APIRouter(
     prefix="/rooms",
     tags=["rooms"]
 )
-
+UPLOAD_DIRECTORY = "uploaded_images/rooms"
+os.makedirs(UPLOAD_DIRECTORY, exist_ok=True)
 @router.post("/")
 def create_room(room: RoomCreate, db: Session = Depends(get_db)):
     db_room = crud.create_room(db, room.dict())
@@ -56,7 +57,7 @@ async def upload_room_image(
         raise HTTPException(status_code=400, detail="Invalid file format. Only jpg, jpeg, and png are allowed.")
 
     filename = f"{uuid4()}.{file_extension}"
-    file_path = os.path.join("uploaded_images/rooms", filename)
+    file_path = os.path.join(UPLOAD_DIRECTORY, filename)
 
     try:
         with open(file_path, "wb") as f:
@@ -64,7 +65,7 @@ async def upload_room_image(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error saving file: {str(e)}")
 
-    image_url = f"/uploaded_images/rooms/{filename}"
+    image_url = f"/{UPLOAD_DIRECTORY}/{filename}"
 
     try:
         room_image = crud.add_room_image(db, room_id=room_id, image_url=image_url)

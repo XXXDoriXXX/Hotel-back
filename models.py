@@ -68,11 +68,10 @@ class Hotel(Base):
     name = Column(String, nullable=False)
     address = Column(String, nullable=False)
     owner_id = Column(Integer, ForeignKey('owners.id'), nullable=False)
-
     owner = relationship('Owner', back_populates='hotels')
     rooms = relationship('Room', back_populates='hotel', cascade='all, delete')
     employees = relationship('Employee', back_populates='hotel', cascade='all, delete')
-    images = relationship('HotelImage', back_populates='hotel', cascade='all, delete')  # Додано
+    images = relationship('HotelImage', back_populates='hotel', cascade='all, delete')
 
 class Room(Base):
     __tablename__ = 'rooms'
@@ -86,7 +85,7 @@ class Room(Base):
 
     hotel = relationship('Hotel', back_populates='rooms')
     bookings = relationship('Booking', back_populates='room', cascade='all, delete')
-    images = relationship('RoomImage', back_populates='room', cascade='all, delete')  # Додано
+    images = relationship('RoomImage', back_populates='room', cascade='all, delete')
 
 class Booking(Base):
     __tablename__ = 'bookings'

@@ -21,6 +21,42 @@ def create_hotel(hotel: HotelCreate, db: Session = Depends(get_db)):
     if not db_hotel:
         raise HTTPException(status_code=400, detail="Hotel creation failed")
     return db_hotel
+@router.get("/all_details")
+def get_all_hotels_with_details(db: Session = Depends(get_db)):
+    hotels = db.query(Hotel).all()
+    result = []
+    for hotel in hotels:
+        # Отримання зображень готелю
+        hotel_images = [
+            {"id": image.id, "image_url": image.image_url}
+            for image in hotel.images
+        ]
+
+        # Отримання кімнат готелю
+        rooms = []
+        for room in hotel.rooms:
+            # Отримання зображень кімнати
+            room_images = [
+                {"id": image.id, "image_url": image.image_url}
+                for image in room.images
+            ]
+            rooms.append({
+                "id": room.id,
+                "room_number": room.room_number,
+                "room_type": room.room_type,
+                "places": room.places,
+                "price_per_night": room.price_per_night,
+                "images": room_images
+            })
+
+        result.append({
+            "id": hotel.id,
+            "name": hotel.name,
+            "address": hotel.address,
+            "images": hotel_images,
+            "rooms": rooms
+        })
+    return result
 
 @router.get("/")
 def get_all_hotels(db: Session = Depends(get_db)):
