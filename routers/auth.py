@@ -36,8 +36,6 @@ def login(login_request: LoginRequest, db: Session = Depends(get_db)):
             detail="Invalid credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
-
-    # Додаємо owner_id до токена, якщо користувач є власником
     access_token = create_access_token({
         "id": user["id"],
         "email": user["email"],
@@ -45,7 +43,7 @@ def login(login_request: LoginRequest, db: Session = Depends(get_db)):
         "first_name": user["first_name"],
         "last_name": user["last_name"],
         "phone": user["phone"],
-        "owner_id": user.get("owner_id")  # Додаємо owner_id
+        "owner_id": user.get("owner_id")
     })
 
     return {"access_token": access_token, "token_type": "bearer"}

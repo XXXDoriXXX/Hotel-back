@@ -47,6 +47,7 @@ class RoomDetails(BaseModel):
     room_type: str
     places: int
     price_per_night: float
+    description: Optional[str]
     images: List[RoomImageBase]
     bookings: List[BookingDetails]
 
@@ -73,6 +74,7 @@ class HotelWithDetails(BaseModel):
     rating_count: int
     views: int
     amenities: List[str]
+    description: Optional[str]
     images: List[HotelImageBase]
     rooms: List[RoomDetails]
     employees: List[EmployeeDetails]
@@ -148,6 +150,7 @@ class HotelCreate(BaseModel):
     rating_count: Optional[int] = 0
     views: Optional[int] = 0
     amenities: Optional[List[str]] = []
+    description: Optional[str] = None
 
 class RoomCreate(BaseModel):
     room_number: str
@@ -155,6 +158,7 @@ class RoomCreate(BaseModel):
     places: int
     price_per_night: float
     hotel_id: int
+    description: Optional[str] = None
 
 class BookingCreate(BaseModel):
     client_id: int

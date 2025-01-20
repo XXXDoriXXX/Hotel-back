@@ -99,7 +99,8 @@ def create_hotel(db: Session, hotel: dict):
         rating=hotel.get("rating", 0.0),
         rating_count=hotel.get("rating_count", 0),
         views=hotel.get("views", 0),
-        amenities=hotel.get("amenities", [])
+        amenities=hotel.get("amenities", []),
+        description=hotel.get("description", None)
     )
     db.add(db_hotel)
     db.commit()

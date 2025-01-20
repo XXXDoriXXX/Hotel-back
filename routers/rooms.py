@@ -1,11 +1,13 @@
 import os
+from typing import List, Optional
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 from database import get_db
 from dependencies import is_hotel_owner, get_current_user
-from schemas import RoomCreate
+from routers.hotels import DescriptionUpdate
+from schemas import RoomCreate, RoomDetails
 from models import Room, RoomImage
 import crud
 
@@ -21,6 +23,33 @@ def create_room(room: RoomCreate, db: Session = Depends(get_db)):
     if not db_room:
         raise HTTPException(status_code=400, detail="Room creation failed")
     return db_room
+@router.get("/search", response_model=List[RoomDetails])
+def search_rooms(
+    hotel_id: int,
+    room_number: Optional[str] = None,
+    min_price: Optional[float] = None,
+    max_price: Optional[float] = None,
+    places: Optional[int] = None,
+    room_type: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    query = db.query(Room).filter(Room.hotel_id == hotel_id)
+
+    if room_number:
+        query = query.filter(Room.room_number.ilike(f"%{room_number}%"))
+    if min_price:
+        query = query.filter(Room.price_per_night >= min_price)
+    if max_price:
+        query = query.filter(Room.price_per_night <= max_price)
+    if places:
+        query = query.filter(Room.places == places)
+    if room_type:
+        query = query.filter(Room.room_type.ilike(f"%{room_type}%"))
+
+    rooms = query.all()
+    if not rooms:
+        raise HTTPException(status_code=404, detail="No rooms found")
+    return rooms
 
 @router.get("/")
 def get_all_rooms(db: Session = Depends(get_db)):
@@ -100,3 +129,23 @@ def delete_room_image(
 def get_room_images(room_id: int, db: Session = Depends(get_db)):
     images = db.query(RoomImage).filter(RoomImage.room_id == room_id).all()
     return images
+@router.put("/{room_id}/description")
+def update_room_description(
+    room_id: int,
+    body: DescriptionUpdate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    room = db.query(Room).filter(Room.id == room_id).first()
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+    if room.hotel.owner_id != current_user.get("id"):
+        raise HTTPException(status_code=403, detail="Not authorized to modify this room")
+
+    if len(body.description) > 500:
+        raise HTTPException(status_code=400, detail="Description must not exceed 500 characters")
+
+    room.description = body.description
+    db.commit()
+    db.refresh(room)
+    return {"message": "Room description updated successfully"}

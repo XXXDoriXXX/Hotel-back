@@ -73,6 +73,7 @@ class Hotel(Base):
     rating_count = Column(Integer, default=0)
     views = Column(Integer, default=0)
     amenities = Column(JSON, default=list)
+    description = Column(String(500), nullable=True)
 
     ratings = relationship("Rating", back_populates="hotel", cascade="all, delete")
     owner = relationship('Owner', back_populates='hotels')
@@ -89,6 +90,7 @@ class Room(Base):
     places = Column(Integer, nullable=False)
     price_per_night = Column(Float, nullable=False)
     hotel_id = Column(Integer, ForeignKey('hotels.id'), nullable=False)
+    description = Column(String(500), nullable=True)
 
     hotel = relationship('Hotel', back_populates='rooms')
     bookings = relationship('Booking', back_populates='room', cascade='all, delete')

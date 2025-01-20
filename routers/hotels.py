@@ -1,13 +1,13 @@
 import os
-from typing import List
+from typing import List, Optional
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from database import get_db
 from dependencies import get_current_user, is_hotel_owner
-from schemas import HotelCreate
+from schemas import HotelCreate, HotelWithDetails
 from models import Hotel, HotelImage, Rating
 import crud
 
@@ -23,6 +23,28 @@ def create_hotel(hotel: HotelCreate, db: Session = Depends(get_db)):
     if not db_hotel:
         raise HTTPException(status_code=400, detail="Hotel creation failed")
     return db_hotel
+@router.get("/search", response_model=List[HotelWithDetails])
+def search_hotels(
+    name: Optional[str] = None,
+    address: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    query = db.query(Hotel).options(
+        joinedload(Hotel.rooms),
+        joinedload(Hotel.images),
+        joinedload(Hotel.employees)
+    )
+
+    if name:
+        query = query.filter(Hotel.name.ilike(f"%{name}%"))
+    if address:
+        query = query.filter(Hotel.address.ilike(f"%{address}%"))
+
+    hotels = query.all()
+    if not hotels:
+        raise HTTPException(status_code=404, detail="No hotels found")
+    return hotels
+
 @router.get("/all_details")
 def get_all_hotels_with_details(db: Session = Depends(get_db)):
     hotels = db.query(Hotel).all()
@@ -44,7 +66,8 @@ def get_all_hotels_with_details(db: Session = Depends(get_db)):
                 "room_type": room.room_type,
                 "places": room.places,
                 "price_per_night": room.price_per_night,
-                "images": room_images
+                "images": room_images,
+                "description": room.description
             })
 
         result.append({
@@ -55,7 +78,8 @@ def get_all_hotels_with_details(db: Session = Depends(get_db)):
             "rooms": rooms,
             "rating":hotel.rating,
             "rating_count":hotel.rating_count,
-            "views": hotel.views
+            "views": hotel.views,
+            "description":hotel.description
         })
     return result
 
@@ -63,12 +87,21 @@ def get_all_hotels_with_details(db: Session = Depends(get_db)):
 def get_all_hotels(db: Session = Depends(get_db)):
     return db.query(Hotel).all()
 
-@router.get("/{hotel_id}")
-def get_hotel(hotel_id: int, db: Session = Depends(get_db)):
-    hotel = db.query(Hotel).filter(Hotel.id == hotel_id).first()
+@router.get("/{hotel_id}", response_model=HotelWithDetails)
+def get_hotel_by_id(
+    hotel_id: int,
+    db: Session = Depends(get_db)
+):
+    hotel = db.query(Hotel).options(
+        joinedload(Hotel.rooms),
+        joinedload(Hotel.images),
+        joinedload(Hotel.employees)
+    ).filter(Hotel.id == hotel_id).first()
+
     if not hotel:
         raise HTTPException(status_code=404, detail="Hotel not found")
     return hotel
+
 @router.delete("/{hotel_id}")
 def delete_hotel(hotel_id: int, db: Session = Depends(get_db)):
     try:
@@ -114,12 +147,10 @@ def delete_hotel_image(
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
-    # Отримання зображення
     image = db.query(HotelImage).filter(HotelImage.id == image_id).first()
     if not image:
         raise HTTPException(status_code=404, detail="Image not found")
 
-    # Перевірка на власника
     is_hotel_owner(current_user, image.hotel_id, db)
 
     file_path = image.image_url.lstrip("/")
@@ -186,7 +217,7 @@ class RatingRequest(BaseModel):
 @router.post("/{hotel_id}/rate")
 def add_rating(
     hotel_id: int,
-    request: RatingRequest,  # Очікуємо `rating` у тілі запиту
+    request: RatingRequest,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
@@ -203,19 +234,16 @@ def add_rating(
     if not hotel:
         raise HTTPException(status_code=404, detail="Hotel not found")
 
-    # Перевіряємо, чи є вже оцінка від цього користувача
     existing_rating = db.query(Rating).filter(
         Rating.user_id == user_id, Rating.hotel_id == hotel_id
     ).first()
 
     if existing_rating:
-        # Оновлюємо наявний рейтинг
         total_rating = hotel.rating * hotel.rating_count - existing_rating.rating
         total_rating += new_rating
         hotel.rating = total_rating / hotel.rating_count
         existing_rating.rating = new_rating
     else:
-        # Додаємо новий рейтинг
         total_rating = hotel.rating * hotel.rating_count
         hotel.rating_count += 1
         hotel.rating = (total_rating + new_rating) / hotel.rating_count
@@ -231,3 +259,25 @@ def add_rating(
         "rating": hotel.rating,
         "rating_count": hotel.rating_count
     }
+class DescriptionUpdate(BaseModel):
+    description: str
+@router.put("/{hotel_id}/description")
+def update_hotel_description(
+    hotel_id: int,
+    body: DescriptionUpdate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    hotel = db.query(Hotel).filter(Hotel.id == hotel_id).first()
+    if not hotel:
+        raise HTTPException(status_code=404, detail="Hotel not found")
+    if hotel.owner_id != current_user.get("id"):
+        raise HTTPException(status_code=403, detail="Not authorized to modify this hotel")
+
+    if len(body.description) > 500:
+        raise HTTPException(status_code=400, detail="Description must not exceed 500 characters")
+
+    hotel.description = body.description
+    db.commit()
+    db.refresh(hotel)
+    return {"message": "Hotel description updated successfully"}
