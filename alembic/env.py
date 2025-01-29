@@ -6,22 +6,17 @@ from alembic import context
 import sys
 import os
 
-# Додаємо шлях до кореневої директорії проєкту
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from models import Base  # Імпорт ваших моделей
-from database import SQLALCHEMY_DATABASE_URL  # URL до бази даних
-
+from models import Base
+from database import SQLALCHEMY_DATABASE_URL
 config = context.config
 
-# Додаємо URL до бази даних із змінної середовища або файлу конфігурації
 config.set_main_option('sqlalchemy.url', SQLALCHEMY_DATABASE_URL)
 
-# Логування
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Вкажіть metadata для Alembic
 target_metadata = Base.metadata
 
 

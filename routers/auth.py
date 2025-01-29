@@ -43,6 +43,7 @@ def login(login_request: LoginRequest, db: Session = Depends(get_db)):
         "first_name": user["first_name"],
         "last_name": user["last_name"],
         "phone": user["phone"],
+        "birth_date": user["birth_date"],
         "owner_id": user.get("owner_id")
     })
 

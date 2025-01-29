@@ -55,7 +55,6 @@ def update_profile(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Оновлюємо тільки ті поля, які були передані в запиті
     if "first_name" in updated_data:
         user.first_name = updated_data["first_name"]
     if "last_name" in updated_data:

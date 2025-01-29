@@ -41,6 +41,7 @@ def authenticate_user(db: Session, email: str, password: str):
         "email": person.email,
         "phone": person.phone,
         "is_owner": person.is_owner,
+        "birth_date": person.birth_date,
         "owner_id": owner_id
     }
 
