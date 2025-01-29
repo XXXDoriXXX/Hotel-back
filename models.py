@@ -28,6 +28,7 @@ class Person(Base):
     password = Column(String, nullable=False)
     is_owner = Column(Boolean, default=False, nullable=False)
     birth_date = Column(Date, nullable=True)
+    avatar_url = Column(String, nullable=True)
     ratings = relationship("Rating", back_populates="user", cascade="all, delete")
     owner = relationship('Owner', uselist=False, back_populates='person')
     client = relationship('Client', uselist=False, back_populates='person')

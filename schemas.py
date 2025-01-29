@@ -90,6 +90,7 @@ class PersonBase(BaseModel):
     phone: str
     is_owner: bool
     birth_date: Optional[date]
+    avatar_url: Optional[str]
     class Config:
         from_attributes = True
 
@@ -197,3 +198,7 @@ class Employee(EmployeeBase):
     class Config:
         from_attributes = True
 
+class ChangeCredentialsRequest(BaseModel):
+    current_password: str
+    new_password: Optional[str] = None
+    new_email: Optional[str] = None

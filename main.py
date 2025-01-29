@@ -2,7 +2,7 @@ import os
 
 from fastapi import FastAPI
 from database import Base, engine
-from routers import owners, clients, hotels, rooms, bookings, auth, people, employees
+from routers import owners, clients, hotels, rooms, bookings, auth, people, employees, profile
 from fastapi.staticfiles import StaticFiles
 # Створення таблиць
 Base.metadata.create_all(bind=engine)
@@ -17,6 +17,7 @@ app.include_router(rooms.router)
 app.include_router(bookings.router)
 app.include_router(auth.router)
 app.include_router(people.router)
+app.include_router(profile.router)
 app.include_router(employees.router)
 UPLOAD_DIRECTORY = "uploaded_images"
 if not os.path.exists(UPLOAD_DIRECTORY):
