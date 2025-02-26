@@ -83,14 +83,14 @@ class HotelWithDetails(BaseModel):
         from_attributes = True
 
 class PersonBase(BaseModel):
-    id: int
+    id: Optional[int] = None  # Робимо id необов'язковим
     first_name: str
     last_name: str
     email: Optional[str]
     phone: str
     is_owner: bool
     birth_date: Optional[date]
-    avatar_url: Optional[str]
+    avatar_url: Optional[str] = None  # Робимо avatar_url необов'язковим
     class Config:
         from_attributes = True
 

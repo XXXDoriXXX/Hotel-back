@@ -21,12 +21,14 @@ def register(user: PersonCreate, db: Session = Depends(get_db)):
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="A user with this email or phone already exists."
         )
+
     if user.is_owner:
         new_owner = create_owner(db, user.dict())
-        return new_owner.person
+        return PersonBase(**new_owner.person.__dict__)  # Перетворюємо у відповідну модель
     else:
         new_client = create_client(db, user.dict())
-        return new_client.person
+        return PersonBase(**new_client.person.__dict__)  # Аналогічно
+
 @router.post("/login", response_model=Token)
 def login(login_request: LoginRequest, db: Session = Depends(get_db)):
     user = authenticate_user(db, login_request.email, login_request.password)

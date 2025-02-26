@@ -45,6 +45,23 @@ async def change_avatar(
     db.refresh(user)
 
     return {"message": "Avatar updated successfully", "avatar_url": user.avatar_url}
+
+
+@router.get("/avatar")
+def get_avatar(db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+    print("CURRENT USER:", current_user)
+
+    user = db.query(Person).filter(Person.id == current_user["id"]).first()
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if not user.avatar_url:
+        raise HTTPException(status_code=404, detail="Avatar not found")
+
+    return {"avatar_url": user.avatar_url}
+
+
 @router.put("/", response_model=PersonBase)
 def update_profile(
     updated_data: dict,
@@ -95,3 +112,13 @@ def change_credentials(
     db.refresh(user)
 
     return {"message": "Credentials updated successfully"}
+
+
+@router.get("/", response_model=PersonBase)
+def get_profile(db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+    user = db.query(Person).filter(Person.id == current_user["id"]).first()
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return user

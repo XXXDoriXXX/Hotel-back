@@ -5,12 +5,12 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="fcd9f923-94e8-4ad2-a02f-4703d1dba4e2" name="Changes" comment="Зміна даних користувача та добавлений аватар">
+      <change afterPath="$PROJECT_DIR$/routers/payments.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/alembic/env.py" beforeDir="false" afterPath="$PROJECT_DIR$/alembic/env.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/crud.py" beforeDir="false" afterPath="$PROJECT_DIR$/crud.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/routers/auth.py" beforeDir="false" afterPath="$PROJECT_DIR$/routers/auth.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/routers/profile.py" beforeDir="false" afterPath="$PROJECT_DIR$/routers/profile.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/utils.py" beforeDir="false" afterPath="$PROJECT_DIR$/utils.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/schemas.py" beforeDir="false" afterPath="$PROJECT_DIR$/schemas.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -33,18 +33,18 @@
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
     <option name="RESET_MODE" value="HARD" />
   </component>
-  <component name="GitHubPullRequestSearchHistory"><![CDATA[{
-  "lastFilter": {
-    "state": "OPEN",
-    "assignee": "XXXDoriXXX"
+  <component name="GitHubPullRequestSearchHistory">{
+  &quot;lastFilter&quot;: {
+    &quot;state&quot;: &quot;OPEN&quot;,
+    &quot;assignee&quot;: &quot;XXXDoriXXX&quot;
   }
-}]]></component>
-  <component name="GithubPullRequestsUISettings"><![CDATA[{
-  "selectedUrlAndAccountId": {
-    "url": "https://github.com/XXXDoriXXX/HotelFastApi.git",
-    "accountId": "0dc7dfaf-e0a5-4136-a1cd-f2598229d262"
+}</component>
+  <component name="GithubPullRequestsUISettings">{
+  &quot;selectedUrlAndAccountId&quot;: {
+    &quot;url&quot;: &quot;https://github.com/XXXDoriXXX/HotelFastApi.git&quot;,
+    &quot;accountId&quot;: &quot;0dc7dfaf-e0a5-4136-a1cd-f2598229d262&quot;
   }
-}]]></component>
+}</component>
   <component name="ProjectColorInfo">{
   &quot;associatedIndex&quot;: 4
 }</component>
@@ -56,23 +56,24 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "Python.dependencies.executor": "Debug",
-    "Python.main.executor": "Run",
-    "Python.owners.executor": "Run",
-    "Python.profile.executor": "Run",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "git-widget-placeholder": "main",
-    "ignore.virus.scanning.warn.message": "true",
-    "node.js.detected.package.eslint": "true",
-    "node.js.detected.package.tslint": "true",
-    "node.js.selected.package.eslint": "(autodetect)",
-    "node.js.selected.package.tslint": "(autodetect)",
-    "nodejs_package_manager_path": "npm",
-    "vue.rearranger.settings.migration": "true"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;Python.dependencies.executor&quot;: &quot;Debug&quot;,
+    &quot;Python.main.executor&quot;: &quot;Run&quot;,
+    &quot;Python.owners.executor&quot;: &quot;Run&quot;,
+    &quot;Python.profile.executor&quot;: &quot;Run&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
+    &quot;ignore.virus.scanning.warn.message&quot;: &quot;true&quot;,
+    &quot;last_opened_file_path&quot;: &quot;C:/Users/vadym/PycharmProjects/HotelFastAPI&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
   }
-}]]></component>
+}</component>
   <component name="SharedIndexes">
     <attachedChunks>
       <set>
@@ -107,7 +108,21 @@
       <workItem from="1737134029712" duration="176000" />
       <workItem from="1737202100997" duration="21497000" />
       <workItem from="1737403973696" duration="6462000" />
-      <workItem from="1738185208239" duration="1399000" />
+      <workItem from="1738185208239" duration="1846000" />
+      <workItem from="1738267851097" duration="4967000" />
+      <workItem from="1738307741197" duration="1654000" />
+      <workItem from="1738598530654" duration="5552000" />
+      <workItem from="1738768178353" duration="6900000" />
+      <workItem from="1738921761054" duration="2968000" />
+      <workItem from="1738957655565" duration="2774000" />
+      <workItem from="1739216121180" duration="2798000" />
+      <workItem from="1739261396962" duration="608000" />
+      <workItem from="1739443655802" duration="419000" />
+      <workItem from="1739482385341" duration="477000" />
+      <workItem from="1739784841246" duration="1843000" />
+      <workItem from="1739798057181" duration="32000" />
+      <workItem from="1740332942957" duration="3291000" />
+      <workItem from="1740590248326" duration="1349000" />
     </task>
     <task id="LOCAL-00001" summary="Працююче апі">
       <option name="closed" value="true" />
@@ -197,7 +212,15 @@
       <option name="project" value="LOCAL" />
       <updated>1738168719732</updated>
     </task>
-    <option name="localTasksCounter" value="12" />
+    <task id="LOCAL-00012" summary="Зміна даних користувача та добавлений аватар">
+      <option name="closed" value="true" />
+      <created>1738187917335</created>
+      <option name="number" value="00012" />
+      <option name="presentableId" value="LOCAL-00012" />
+      <option name="project" value="LOCAL" />
+      <updated>1738187917335</updated>
+    </task>
+    <option name="localTasksCounter" value="13" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -247,11 +270,6 @@
           <url>file://$PROJECT_DIR$/dependencies.py</url>
           <line>23</line>
           <option name="timeStamp" value="1" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/utils.py</url>
-          <line>7</line>
-          <option name="timeStamp" value="2" />
         </line-breakpoint>
       </breakpoints>
     </breakpoint-manager>
