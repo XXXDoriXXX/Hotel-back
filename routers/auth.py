@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Body
 from sqlalchemy.orm import Session
 
 from models import Person
@@ -29,15 +29,23 @@ def register(user: PersonCreate, db: Session = Depends(get_db)):
         new_client = create_client(db, user.dict())
         return PersonBase(**new_client.person.__dict__)  # Аналогічно
 
+
 @router.post("/login", response_model=Token)
-def login(login_request: LoginRequest, db: Session = Depends(get_db)):
+def login(
+        email: str = Body(..., embed=True),
+        password: str = Body(..., embed=True),
+        db: Session = Depends(get_db)
+):
+    login_request = LoginRequest(email=email, password=password)
     user = authenticate_user(db, login_request.email, login_request.password)
+
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
     access_token = create_access_token({
         "id": user["id"],
         "email": user["email"],
@@ -50,4 +58,3 @@ def login(login_request: LoginRequest, db: Session = Depends(get_db)):
     })
 
     return {"access_token": access_token, "token_type": "bearer"}
-
