@@ -19,6 +19,11 @@ def create_payment_intent(payment_request: PaymentRequest):
             currency="usd",
             payment_method_types=["card"],
         )
-        return PaymentResponse(id=intent.id, status=intent.status)
+        return PaymentResponse(
+            id=intent.id,
+            clientSecret=intent.client_secret,
+            status=intent.status
+        )
+
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))

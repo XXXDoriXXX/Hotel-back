@@ -31,7 +31,9 @@ class PaymentRequest(BaseModel):
 
 class PaymentResponse(BaseModel):
     id: str
+    clientSecret: str
     status: str
+
 
 class BookingDetails(BaseModel):
     id: int

@@ -24,10 +24,10 @@ def register(user: PersonCreate, db: Session = Depends(get_db)):
 
     if user.is_owner:
         new_owner = create_owner(db, user.dict())
-        return PersonBase(**new_owner.person.__dict__)  # Перетворюємо у відповідну модель
+        return PersonBase(**new_owner.person.__dict__)
     else:
         new_client = create_client(db, user.dict())
-        return PersonBase(**new_client.person.__dict__)  # Аналогічно
+        return PersonBase(**new_client.person.__dict__)
 
 @router.post("/login", response_model=Token)
 def login(login_request: LoginRequest, db: Session = Depends(get_db)):
