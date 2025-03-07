@@ -1,4 +1,6 @@
 from logging.config import fileConfig
+
+from dotenv import load_dotenv
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 from alembic import context
@@ -9,7 +11,7 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from models import Base
-
+load_dotenv()
 SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL")
 print(f"DATABASE_URL: {SQLALCHEMY_DATABASE_URL}")
 
