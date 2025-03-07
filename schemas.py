@@ -26,6 +26,14 @@ class ClientDetails(BaseModel):
 
     class Config:
         from_attributes = True
+class PaymentRequest(BaseModel):
+    amount: float
+
+class PaymentResponse(BaseModel):
+    id: str
+    clientSecret: str
+    status: str
+
 
 class BookingDetails(BaseModel):
     id: int
