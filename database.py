@@ -4,6 +4,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
 SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL")
+print(f"DATABASE_URL: {SQLALCHEMY_DATABASE_URL}")
 
 if not SQLALCHEMY_DATABASE_URL:
     raise ValueError(" ERROR: DATABASE_URL not found! Check variables in Railway.")

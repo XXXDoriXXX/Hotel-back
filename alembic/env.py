@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from models import Base
 
 SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL")
+print(f"DATABASE_URL: {SQLALCHEMY_DATABASE_URL}")
 
 if not SQLALCHEMY_DATABASE_URL:
     raise ValueError(" ERROR: DATABASE_URL not found! Check variables in Railway.")
