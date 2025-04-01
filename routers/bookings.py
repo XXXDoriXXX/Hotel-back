@@ -13,12 +13,11 @@ router = APIRouter(
 
 @router.post("/")
 def create_booking(booking: BookingCreate, db: Session = Depends(get_db)):
-    # Перевірка існування кімнати
+
     room = db.query(Room).filter(Room.id == booking.room_id).first()
     if not room:
         raise HTTPException(status_code=404, detail="Room not found")
 
-    # Перевірка доступності кімнати
     existing_booking = db.query(Booking).filter(
         Booking.room_id == booking.room_id,
         Booking.date_start <= booking.date_end,
@@ -27,11 +26,9 @@ def create_booking(booking: BookingCreate, db: Session = Depends(get_db)):
     if existing_booking:
         raise HTTPException(status_code=400, detail="Room is not available for the selected dates")
 
-    # Обчислення загальної ціни
     total_days = (booking.date_end - booking.date_start).days
     total_price = total_days * room.price_per_night
 
-    # Створення бронювання
     booking_data = booking.dict()
     booking_data["total_price"] = total_price
     db_booking = crud.create_booking(db, booking_data)

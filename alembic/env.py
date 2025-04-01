@@ -11,14 +11,10 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from models import Base
-load_dotenv()
-SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL")
+from database import SQLALCHEMY_DATABASE_URL
 print(f"DATABASE_URL: {SQLALCHEMY_DATABASE_URL}")
-
-if not SQLALCHEMY_DATABASE_URL:
-    raise ValueError(" ERROR: DATABASE_URL not found! Check variables in Railway.")
-
 config = context.config
+
 config.set_main_option('sqlalchemy.url', SQLALCHEMY_DATABASE_URL)
 
 if config.config_file_name is not None:

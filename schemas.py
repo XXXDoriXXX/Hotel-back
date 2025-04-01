@@ -1,6 +1,8 @@
 from pydantic import BaseModel, Field
 from typing import Optional, List
-from datetime import date
+from datetime import date, datetime
+
+
 class HotelImageBase(BaseModel):
     id: int
     hotel_id: int
@@ -30,16 +32,33 @@ class ClientDetails(BaseModel):
 class BookingDetails(BaseModel):
     id: int
     client_id: int
-    client: "ClientDetails"
+    client: ClientDetails
     date_start: str
     date_end: str
     total_price: float
-
+    payment_id: Optional[int] = None
+    status: str
+    created_at: datetime
+    paid_at: Optional[datetime] = None
     class Config:
         from_attributes = True
         json_encoders = {
             date: lambda v: v.isoformat()
         }
+class PaymentRequest(BaseModel):
+    amount: float
+
+class PaymentResponse(BaseModel):
+    id: str
+    clientSecret: str
+    status: str
+class PaymentSuccessRequest(BaseModel):
+    client_id: int
+    room_id: int
+    date_start: date
+    date_end: date
+    total_price: float
+    amount: float
 
 class RoomDetails(BaseModel):
     id: int
@@ -83,14 +102,14 @@ class HotelWithDetails(BaseModel):
         from_attributes = True
 
 class PersonBase(BaseModel):
-    id: Optional[int] = None  # Робимо id необов'язковим
+    id: Optional[int] = None
     first_name: str
     last_name: str
     email: Optional[str]
     phone: str
     is_owner: bool
     birth_date: Optional[date]
-    avatar_url: Optional[str] = None  # Робимо avatar_url необов'язковим
+    avatar_url: Optional[str] = None
     class Config:
         from_attributes = True
 
@@ -202,3 +221,13 @@ class ChangeCredentialsRequest(BaseModel):
     current_password: str
     new_password: Optional[str] = None
     new_email: Optional[str] = None
+
+class PaymentBase(BaseModel):
+    id: int
+    amount: float
+    status: str
+    created_at: datetime
+    paid_at: Optional[datetime]
+
+    class Config:
+        from_attributes = True

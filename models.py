@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Date, Float, ForeignKey, Boolean, JSON
+from sqlalchemy import Column, Integer, String, Date, Float, ForeignKey, Boolean, JSON, DateTime, func
 from sqlalchemy.orm import relationship
 from database import Base
 class HotelImage(Base):
@@ -107,6 +107,10 @@ class Booking(Base):
     date_end = Column(Date, nullable=False)
     total_price = Column(Float, nullable=False)
 
+    payment_id = Column(Integer, ForeignKey("payments.id"), nullable=True)
+    status = Column(String, default="active", nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+    paid_at = Column(DateTime, nullable=True)
     client = relationship('Client', back_populates='bookings')
     room = relationship('Room', back_populates='bookings')
 class Rating(Base):
@@ -119,3 +123,13 @@ class Rating(Base):
 
     user = relationship("Person", back_populates="ratings")
     hotel = relationship("Hotel", back_populates="ratings")
+
+
+class Payment(Base):
+    __tablename__ = "payments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    amount = Column(Float, nullable=False)
+    status = Column(String, nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+    paid_at = Column(DateTime, nullable=True)

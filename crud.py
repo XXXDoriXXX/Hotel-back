@@ -1,7 +1,7 @@
 import os
 
 from sqlalchemy.orm import Session
-from models import Person, Owner, Client, Hotel, Room, Booking, Employee, HotelImage, RoomImage
+from models import Person, Owner, Client, Hotel, Room, Booking, Employee, HotelImage, RoomImage, Payment
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import and_
 from passlib.context import CryptContext
@@ -200,3 +200,13 @@ def delete_room_image(db: Session, image_id: int):
         os.remove(file_path)
     db.delete(image)
     db.commit()
+def create_payment(db: Session, payment_data: dict):
+    db_payment = Payment(
+        amount=payment_data.get("amount"),
+        status=payment_data.get("status"),
+        paid_at=payment_data.get("paid_at")
+    )
+    db.add(db_payment)
+    db.commit()
+    db.refresh(db_payment)
+    return db_payment
