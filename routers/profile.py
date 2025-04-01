@@ -2,7 +2,7 @@ import os
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 
-from crud import verify_password, get_password_hash
+from crud.person_crud import verify_password, get_password_hash
 from dependencies import get_current_user
 from models import Person
 from database import get_db

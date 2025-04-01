@@ -9,7 +9,7 @@ from dependencies import is_hotel_owner, get_current_user
 from routers.hotels import DescriptionUpdate
 from schemas import RoomCreate, RoomDetails
 from models import Room, RoomImage
-import crud
+import crud.room_crud
 
 router = APIRouter(
     prefix="/rooms",
@@ -65,7 +65,7 @@ def get_room(room_id: int, db: Session = Depends(get_db)):
 def delete_room(room_id: int, db: Session = Depends(get_db)):
 
     try:
-        deleted_room = crud.delete_record(db,Room, room_id)
+        deleted_room = crud.room_crud.delete_room(db, room_id)
         return deleted_room
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -97,7 +97,7 @@ async def upload_room_image(
     image_url = f"/{UPLOAD_DIRECTORY}/{filename}"
 
     try:
-        room_image = crud.add_room_image(db, room_id=room_id, image_url=image_url)
+        room_image = crud.room_crud.add_room_image(db, room_id=room_id, image_url=image_url)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error saving image record: {str(e)}")
 

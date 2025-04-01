@@ -9,7 +9,7 @@ from database import get_db
 from dependencies import get_current_user, is_hotel_owner
 from schemas import HotelCreate, HotelWithDetails
 from models import Hotel, HotelImage, Rating
-import crud
+import crud.hotel_crud
 
 router = APIRouter(
     prefix="/hotels",
@@ -19,7 +19,7 @@ UPLOAD_DIRECTORY = "uploaded_images/hotels"
 os.makedirs(UPLOAD_DIRECTORY, exist_ok=True)
 @router.post("/")
 def create_hotel(hotel: HotelCreate, db: Session = Depends(get_db)):
-    db_hotel = crud.create_hotel(db, hotel.dict())
+    db_hotel = crud.hotel_crud.create_hotel(db, hotel.dict())
     if not db_hotel:
         raise HTTPException(status_code=400, detail="Hotel creation failed")
     return db_hotel
@@ -105,7 +105,7 @@ def get_hotel_by_id(
 @router.delete("/{hotel_id}")
 def delete_hotel(hotel_id: int, db: Session = Depends(get_db)):
     try:
-        deleted_hotel = crud.delete_record(db, Hotel, hotel_id)
+        deleted_hotel = crud.hotel_crud.delete_hotel(db, hotel_id)
         return deleted_hotel
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -135,7 +135,7 @@ async def upload_hotel_image(
     image_url = f"/{UPLOAD_DIRECTORY}/{filename}"
 
     try:
-        hotel_image = crud.add_hotel_image(db, hotel_id=hotel_id, image_url=image_url)
+        hotel_image = crud.hotel_crud.create_hotel_image(db, hotel_id=hotel_id, image_url=image_url)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error saving image record: {str(e)}")
 

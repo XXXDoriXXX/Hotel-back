@@ -4,7 +4,8 @@ from datetime import datetime
 from dotenv import load_dotenv
 from requests import Session
 
-import crud
+import crud.payment_crud
+import crud.booking_crud
 import stripe
 from fastapi import APIRouter, HTTPException, Depends
 
@@ -45,7 +46,7 @@ def payment_success(request: PaymentSuccessRequest, db: Session = Depends(get_db
         "status": "completed",
         "paid_at": datetime.utcnow()
     }
-    db_payment = crud.create_payment(db, payment_data)
+    db_payment = crud.payment_crud.create_payment(db, payment_data)
 
     booking_data = {
         "client_id": request.client_id,
@@ -57,7 +58,7 @@ def payment_success(request: PaymentSuccessRequest, db: Session = Depends(get_db
         "status": "completed",
         "paid_at": datetime.utcnow()
     }
-    db_booking = crud.create_booking(db, booking_data)
+    db_booking = crud.booking_crud.create_booking(db, booking_data)
 
     return {
         "message": "Payment successful and booking created",

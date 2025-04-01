@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+
+import crud.booking_crud
 from database import get_db
 from schemas import BookingCreate
 from models import Booking, Room
-import crud
-
+from crud.booking_crud import create_booking, delete_booking
 router = APIRouter(
     prefix="/bookings",
     tags=["bookings"]
@@ -31,7 +32,7 @@ def create_booking(booking: BookingCreate, db: Session = Depends(get_db)):
 
     booking_data = booking.dict()
     booking_data["total_price"] = total_price
-    db_booking = crud.create_booking(db, booking_data)
+    db_booking = crud.booking_crud.create_booking(db, booking_data)
     return db_booking
 
 
@@ -50,7 +51,7 @@ def get_booking(booking_id: int, db: Session = Depends(get_db)):
 def delete_booking(booking_id: int, db: Session = Depends(get_db)):
 
     try:
-        deleted_booking = crud.delete_record(db, Booking, booking_id)
+        deleted_booking = delete_booking(db, Booking, booking_id)
         return deleted_booking
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
