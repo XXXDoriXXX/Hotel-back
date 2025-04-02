@@ -4,11 +4,15 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
+from starlette import status
+
+import schemas
+from crud import room_crud
 from database import get_db
-from dependencies import is_hotel_owner, get_current_user
+from dependencies import is_hotel_owner, get_current_user, get_current_owner
 from routers.hotels import DescriptionUpdate
 from schemas import RoomCreate, RoomDetails
-from models import Room, RoomImage
+from models import Room, RoomImage, Hotel
 import crud.room_crud
 
 router = APIRouter(
@@ -17,11 +21,27 @@ router = APIRouter(
 )
 UPLOAD_DIRECTORY = "uploaded_images/rooms"
 os.makedirs(UPLOAD_DIRECTORY, exist_ok=True)
-@router.post("/")
-def create_room(room: RoomCreate, db: Session = Depends(get_db)):
-    db_room = crud.create_room(db, room.dict())
+ALLOWED_IMAGE_TYPES = ["jpg", "jpeg", "png", "webp"]
+
+@router.post("/", status_code=status.HTTP_201_CREATED)
+def create_room(
+    room: RoomCreate,
+    db: Session = Depends(get_db),
+    current_owner: dict = Depends(get_current_owner)
+):
+    hotel = db.query(Hotel).filter(Hotel.id == room.hotel_id).first()
+    if not hotel or hotel.owner_id != current_owner.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to create rooms in this hotel"
+        )
+
+    db_room = room_crud.create_room(db, room.dict())
     if not db_room:
-        raise HTTPException(status_code=400, detail="Room creation failed")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Room creation failed"
+        )
     return db_room
 @router.get("/search", response_model=List[RoomDetails])
 def search_rooms(
@@ -55,35 +75,83 @@ def search_rooms(
 def get_all_rooms(db: Session = Depends(get_db)):
     return db.query(Room).all()
 
-@router.get("/{room_id}")
-def get_room(room_id: int, db: Session = Depends(get_db)):
-    room = db.query(Room).filter(Room.id == room_id).first()
-    if not room:
-        raise HTTPException(status_code=404, detail="Room not found")
-    return room
-@router.delete("/{room_id}")
-def delete_room(room_id: int, db: Session = Depends(get_db)):
 
-    try:
-        deleted_room = crud.room_crud.delete_room(db, room_id)
-        return deleted_room
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-@router.post("/{room_id}/images/upload/")
-async def upload_room_image(
+@router.get("/{room_id}", response_model=RoomDetails)
+def get_room(
     room_id: int,
-    file: UploadFile = File(...),
-    db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
     room = db.query(Room).filter(Room.id == room_id).first()
     if not room:
-        raise HTTPException(status_code=404, detail="Room not found")
-    is_hotel_owner(current_user, room.hotel_id, db)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Room not found"
+        )
+    return room
+
+
+@router.delete("/{room_id}")
+def delete_room(
+        room_id: int,
+        db: Session = Depends(get_db),
+        current_owner: dict = Depends(get_current_owner)
+):
+    room = db.query(Room).filter(Room.id == room_id).first()
+    if not room:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Room not found"
+        )
+
+    hotel = db.query(Hotel).filter(Hotel.id == room.hotel_id).first()
+    if not hotel or hotel.owner_id != current_owner.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to delete this room"
+        )
+
+    try:
+        deleted = room_crud.delete_room(db, room_id)
+        if not deleted:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Failed to delete room"
+            )
+        return {"message": "Room deleted successfully"}
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
+
+
+@router.post("/{room_id}/images/upload/", status_code=status.HTTP_201_CREATED)
+async def upload_room_image(
+        room_id: int,
+        file: UploadFile = File(...),
+        db: Session = Depends(get_db),
+        current_owner: dict = Depends(get_current_owner)
+):
+    room = db.query(Room).filter(Room.id == room_id).first()
+    if not room:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Room not found"
+        )
+
+    hotel = db.query(Hotel).filter(Hotel.id == room.hotel_id).first()
+    if not hotel or hotel.owner_id != current_owner.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to upload images for this room"
+        )
 
     file_extension = file.filename.split(".")[-1].lower()
-    if file_extension not in ["jpg", "jpeg", "png"]:
-        raise HTTPException(status_code=400, detail="Invalid file format. Only jpg, jpeg, and png are allowed.")
+    if file_extension not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid file format. Allowed: {', '.join(ALLOWED_IMAGE_TYPES)}"
+        )
 
     filename = f"{uuid4()}.{file_extension}"
     file_path = os.path.join(UPLOAD_DIRECTORY, filename)
@@ -92,60 +160,119 @@ async def upload_room_image(
         with open(file_path, "wb") as f:
             f.write(await file.read())
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error saving file: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error saving file: {str(e)}"
+        )
 
     image_url = f"/{UPLOAD_DIRECTORY}/{filename}"
 
     try:
-        room_image = crud.room_crud.add_room_image(db, room_id=room_id, image_url=image_url)
+        room_image = room_crud.add_room_image(db, room_id=room_id, image_url=image_url)
+        return {
+            "id": room_image.id,
+            "image_url": image_url,
+            "message": "Image uploaded successfully"
+        }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error saving image record: {str(e)}")
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error saving image record: {str(e)}"
+        )
 
-    return {"id": room_image.id, "image_url": image_url}
 
 @router.delete("/images/{image_id}")
 def delete_room_image(
-    image_id: int,
-    db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+        image_id: int,
+        db: Session = Depends(get_db),
+        current_owner: dict = Depends(get_current_owner)
 ):
     image = db.query(RoomImage).filter(RoomImage.id == image_id).first()
     if not image:
-        raise HTTPException(status_code=404, detail="Image not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Image not found"
+        )
 
     room = db.query(Room).filter(Room.id == image.room_id).first()
     if not room:
-        raise HTTPException(status_code=404, detail="Room not found")
-    is_hotel_owner(current_user, room.hotel_id, db)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Room not found"
+        )
+
+    # Verify the owner owns the hotel
+    hotel = db.query(Hotel).filter(Hotel.id == room.hotel_id).first()
+    if not hotel or hotel.owner_id != current_owner.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to delete this image"
+        )
 
     file_path = image.image_url.lstrip("/")
     if os.path.exists(file_path):
-        os.remove(file_path)
+        try:
+            os.remove(file_path)
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error deleting file: {str(e)}"
+            )
 
     db.delete(image)
     db.commit()
-    return {"detail": "Image deleted successfully"}
-@router.get("/{room_id}/images/")
-def get_room_images(room_id: int, db: Session = Depends(get_db)):
-    images = db.query(RoomImage).filter(RoomImage.room_id == room_id).all()
-    return images
-@router.put("/{room_id}/description")
-def update_room_description(
+    return {"message": "Image deleted successfully"}
+
+
+@router.get("/{room_id}/images/", response_model=List[schemas.RoomImageBase])
+def get_room_images(
     room_id: int,
-    body: DescriptionUpdate,
-    db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
+    db: Session = Depends(get_db)
 ):
     room = db.query(Room).filter(Room.id == room_id).first()
     if not room:
-        raise HTTPException(status_code=404, detail="Room not found")
-    if room.hotel.owner_id != current_user.get("id"):
-        raise HTTPException(status_code=403, detail="Not authorized to modify this room")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Room not found"
+        )
+
+    images = db.query(RoomImage).filter(RoomImage.room_id == room_id).all()
+    return images
+
+
+@router.put("/{room_id}/description")
+def update_room_description(
+        room_id: int,
+        body: DescriptionUpdate,
+        db: Session = Depends(get_db),
+        current_owner: dict = Depends(get_current_owner)
+):
+    room = db.query(Room).filter(Room.id == room_id).first()
+    if not room:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Room not found"
+        )
+
+    hotel = db.query(Hotel).filter(Hotel.id == room.hotel_id).first()
+    if not hotel or hotel.owner_id != current_owner.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to modify this room"
+        )
 
     if len(body.description) > 500:
-        raise HTTPException(status_code=400, detail="Description must not exceed 500 characters")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Description must not exceed 500 characters"
+        )
 
     room.description = body.description
     db.commit()
     db.refresh(room)
-    return {"message": "Room description updated successfully"}
+    return {
+        "message": "Room description updated successfully",
+        "description": room.description
+    }

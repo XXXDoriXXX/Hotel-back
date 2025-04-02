@@ -32,9 +32,7 @@ def get_current_owner(
         user: dict = Depends(get_current_user),
         db: Session = Depends(get_db)
 ) -> Owner:
-    """
-    Додаткова залежність для перевірки, чи користувач є власником.
-    """
+
     if not user.get("is_owner"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
