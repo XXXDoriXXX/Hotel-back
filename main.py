@@ -1,28 +1,54 @@
 import os
-
 from fastapi import FastAPI
 from database import Base, engine
-from routers import owners, clients, hotels, rooms, bookings, auth, people, employees, profile, stripe
+from routers import (
+    owners, clients, hotels, rooms,
+    bookings, auth, people, employees,
+    profile, stripe
+)
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
+
+app = FastAPI(
+    title="Hotel Booking API",
+    description="API для системи бронювання готелів",
+    version="1.0.0"
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI()
+routers = [
+    owners.router,
+    clients.router,
+    hotels.router,
+    rooms.router,
+    bookings.router,
+    auth.router,
+    people.router,
+    profile.router,
+    stripe.router,
+    employees.router
+]
 
-app.include_router(owners.router)
-app.include_router(clients.router)
-app.include_router(hotels.router)
-app.include_router(rooms.router)
-app.include_router(bookings.router)
-app.include_router(auth.router)
-app.include_router(people.router)
-app.include_router(profile.router)
-app.include_router(stripe.router)
-app.include_router(employees.router)
+for router in routers:
+    app.include_router(router)
+
 UPLOAD_DIRECTORY = "uploaded_images"
-if not os.path.exists(UPLOAD_DIRECTORY):
-    os.makedirs(UPLOAD_DIRECTORY)
-app.mount("/uploaded_images", StaticFiles(directory=UPLOAD_DIRECTORY), name="uploaded_images")
-@app.get("/")
-def read_root():
-    return {"message": "Welcome to the Hotel Booking API"}
+os.makedirs(UPLOAD_DIRECTORY, exist_ok=True)
+app.mount("/static", StaticFiles(directory=UPLOAD_DIRECTORY), name="static")
+
+@app.get("/", tags=["Root"])
+async def read_root():
+    return {
+        "message": "Welcome to the Hotel Booking API",
+        "docs": "/docs",
+        "redoc": "/redoc"
+    }

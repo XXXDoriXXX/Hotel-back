@@ -6,6 +6,6 @@ from .employee import EmployeeBase, EmployeeCreate, Employee, EmployeeDetails
 from .hotel import HotelCreate, HotelWithDetails
 from .room import RoomCreate, RoomDetails
 from .booking import BookingCreate, Booking, BookingDetails
-from .payment import PaymentRequest, PaymentResponse, PaymentSuccessRequest, PaymentBase
+from .payment import PaymentRequest, PaymentResponse, PaymentSuccessRequest, PaymentBase, PaymentIntentResponse, PaymentIntentCreate
 from .hotel_image import HotelImageBase
 from .room_image import RoomImageBase

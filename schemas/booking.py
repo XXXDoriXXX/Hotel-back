@@ -1,6 +1,8 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, validator
 from datetime import date, datetime
 from typing import Optional
+
+from models import PaymentMethod
 from .client import ClientDetails
 
 class BookingCreate(BaseModel):
@@ -8,7 +10,16 @@ class BookingCreate(BaseModel):
     room_id: int
     date_start: date
     date_end: date
-    total_price: float
+    payment_method: PaymentMethod
+@validator('date_end')
+def validate_dates(cls, v, values):
+    if 'date_start' in values and v <= values['date_start']:
+        raise ValueError('End date must be after start date')
+    return v
+class BookingResponse(BaseModel):
+    id: int
+    status: str
+    payment_status: str
 
 class Booking(BaseModel):
     id: int
