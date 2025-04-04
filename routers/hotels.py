@@ -5,11 +5,15 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from sqlalchemy.orm import Session, joinedload
+from starlette import status
+
+import schemas
 from database import get_db
-from dependencies import get_current_user, is_hotel_owner
+from dependencies import get_current_user, is_hotel_owner, get_current_owner
 from schemas import HotelCreate, HotelWithDetails
-from models import Hotel, HotelImage, Rating
-import crud
+from models import Hotel, HotelImage, Rating, Owner
+import crud.hotel_crud
+from schemas.hotel import HotelAmenitiesUpdate
 
 router = APIRouter(
     prefix="/hotels",
@@ -17,11 +21,26 @@ router = APIRouter(
 )
 UPLOAD_DIRECTORY = "uploaded_images/hotels"
 os.makedirs(UPLOAD_DIRECTORY, exist_ok=True)
-@router.post("/")
-def create_hotel(hotel: HotelCreate, db: Session = Depends(get_db)):
-    db_hotel = crud.create_hotel(db, hotel.dict())
+
+
+@router.post("/", status_code=status.HTTP_201_CREATED)
+def create_hotel(
+        hotel_data: HotelCreate,
+        db: Session = Depends(get_db),
+        current_owner: dict = Depends(get_current_owner)
+):
+
+    hotel_dict = hotel_data.dict()
+    hotel_dict["owner_id"] = current_owner.id
+
+    db_hotel = crud.hotel_crud.create_hotel(db, hotel_dict)
+
     if not db_hotel:
-        raise HTTPException(status_code=400, detail="Hotel creation failed")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Hotel creation failed"
+        )
+
     return db_hotel
 @router.get("/search", response_model=List[HotelWithDetails])
 def search_hotels(
@@ -67,7 +86,7 @@ def get_all_hotels_with_details(db: Session = Depends(get_db)):
                 "places": room.places,
                 "price_per_night": room.price_per_night,
                 "images": room_images,
-                "description": room.description
+                "description": room.description,
             })
 
         result.append({
@@ -75,6 +94,7 @@ def get_all_hotels_with_details(db: Session = Depends(get_db)):
             "name": hotel.name,
             "address": hotel.address,
             "images": hotel_images,
+            "amenities":hotel.amenities,
             "rooms": rooms,
             "rating":hotel.rating,
             "rating_count":hotel.rating_count,
@@ -103,25 +123,54 @@ def get_hotel_by_id(
     return hotel
 
 @router.delete("/{hotel_id}")
-def delete_hotel(hotel_id: int, db: Session = Depends(get_db)):
+def delete_hotel(
+    hotel_id: int,
+    db: Session = Depends(get_db),
+    current_owner: Owner = Depends(get_current_owner)
+):
+    hotel = db.query(Hotel).filter(Hotel.id == hotel_id).first()
+    if not hotel:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Hotel not found"
+        )
+
+    if hotel.owner_id != current_owner.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not the owner of this hotel"
+        )
+
     try:
-        deleted_hotel = crud.delete_record(db, Hotel, hotel_id)
-        return deleted_hotel
+        deleted = crud.hotel_crud.delete_hotel(db, hotel_id)
+        if not deleted:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Failed to delete hotel"
+            )
+        return {"message": "Hotel deleted successfully"}
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-@router.post("/{hotel_id}/images/upload/")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
+@router.post("/{hotel_id}/images/upload/", status_code=201)
 async def upload_hotel_image(
     hotel_id: int,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_owner: Owner = Depends(get_current_owner)
 ):
-    print("Current User ID:", current_user["id"])
-    is_hotel_owner(current_user, hotel_id, db)
+    hotel = db.query(Hotel).filter(Hotel.id == hotel_id).first()
+    if not hotel or hotel.owner_id != current_owner.id:
+        raise HTTPException(status_code=404, detail="Hotel not found or access denied")
 
     file_extension = file.filename.split(".")[-1].lower()
-    if file_extension not in ["jpg", "jpeg", "png"]:
-        raise HTTPException(status_code=400, detail="Invalid file format. Only jpg, jpeg, and png are allowed.")
+    if file_extension not in ["jpg", "jpeg", "png", "webp"]:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid file format. Only jpg, jpeg, png and webp are allowed."
+        )
 
     filename = f"{uuid4()}.{file_extension}"
     file_path = os.path.join(UPLOAD_DIRECTORY, filename)
@@ -130,59 +179,84 @@ async def upload_hotel_image(
         with open(file_path, "wb") as f:
             f.write(await file.read())
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error saving file: {str(e)}")
-
-    image_url = f"/{UPLOAD_DIRECTORY}/{filename}"
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error saving file: {str(e)}"
+        )
 
     try:
-        hotel_image = crud.add_hotel_image(db, hotel_id=hotel_id, image_url=image_url)
+        image_url = f"/uploaded_images/hotels/{filename}"
+        hotel_image = crud.hotel_crud.create_hotel_image(
+            db,
+            hotel_id=hotel_id,
+            image_url=image_url
+        )
+        return {
+            "id": hotel_image.id,
+            "image_url": image_url,
+            "message": "Image uploaded successfully"
+        }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error saving image record: {str(e)}")
+        os.remove(file_path)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error saving image record: {str(e)}"
+        )
 
-    return {"id": hotel_image.id, "image_url": image_url}
 
 @router.delete("/images/{image_id}")
 def delete_hotel_image(
-    image_id: int,
-    db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+        image_id: int,
+        db: Session = Depends(get_db),
+        current_owner: Owner = Depends(get_current_owner)
 ):
     image = db.query(HotelImage).filter(HotelImage.id == image_id).first()
     if not image:
         raise HTTPException(status_code=404, detail="Image not found")
 
-    is_hotel_owner(current_user, image.hotel_id, db)
+    hotel = db.query(Hotel).filter(Hotel.id == image.hotel_id).first()
+    if not hotel or hotel.owner_id != current_owner.id:
+        raise HTTPException(status_code=403, detail="Not authorized")
 
     file_path = image.image_url.lstrip("/")
     if os.path.exists(file_path):
-        os.remove(file_path)
+        try:
+            os.remove(file_path)
+        except Exception as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Error deleting file: {str(e)}"
+            )
 
     db.delete(image)
     db.commit()
-    return {"detail": "Image deleted successfully"}
-@router.get("/{hotel_id}/images/")
-def get_hotel_images(hotel_id: int, db: Session = Depends(get_db)):
-    images = db.query(HotelImage).filter(HotelImage.hotel_id == hotel_id).all()
-    return images
-@router.put("/{hotel_id}/amenities")
-def update_amenities(
+
+    return {"message": "Image deleted successfully"}
+@router.get("/{hotel_id}/images/", response_model=List[schemas.HotelImageBase])
+def get_hotel_images(
     hotel_id: int,
-    amenities: List[str],
-    db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
     hotel = db.query(Hotel).filter(Hotel.id == hotel_id).first()
     if not hotel:
         raise HTTPException(status_code=404, detail="Hotel not found")
-    if hotel.owner_id != current_user.get("id"):
-        raise HTTPException(status_code=403, detail="Not authorized to modify this hotel")
-    existing_amenities = set(hotel.amenities or [])
-    new_amenities = set(amenities)
 
-    if existing_amenities.intersection(new_amenities):
-        raise HTTPException(status_code=400, detail="Some amenities already exist")
+    images = db.query(HotelImage).filter(HotelImage.hotel_id == hotel_id).all()
+    return images
 
-    hotel.amenities = list(existing_amenities.union(new_amenities))
+
+@router.put("/{hotel_id}/amenities")
+def update_amenities(
+    hotel_id: int,
+    data: HotelAmenitiesUpdate,
+    db: Session = Depends(get_db),
+    current_owner: Owner = Depends(get_current_owner)
+):
+    hotel = db.query(Hotel).filter(Hotel.id == hotel_id).first()
+    if not hotel or hotel.owner_id != current_owner.id:
+        raise HTTPException(status_code=404, detail="Hotel not found or access denied")
+
+    hotel.amenities = list(set(data.amenities))
     db.commit()
     db.refresh(hotel)
 
@@ -190,6 +264,7 @@ def update_amenities(
         "message": "Amenities updated successfully",
         "amenities": hotel.amenities
     }
+
 @router.post("/{hotel_id}/view")
 def increment_views(
     hotel_id: int,

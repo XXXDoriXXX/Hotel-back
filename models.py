@@ -1,6 +1,26 @@
-from sqlalchemy import Column, Integer, String, Date, Float, ForeignKey, Boolean, JSON
+from enum import Enum as PyEnum
+
+from sqlalchemy import Enum as SQLAEnum
+
+from sqlalchemy import Column, Integer, String, Date, Float, ForeignKey, Boolean, JSON, DateTime, func, Enum
 from sqlalchemy.orm import relationship
 from database import Base
+class BookingStatus(str, PyEnum):
+    PENDING = "pending"
+    CONFIRMED = "confirmed"
+    CANCELLED = "cancelled"
+    COMPLETED = "completed"
+
+class PaymentStatus(str, PyEnum):
+    PENDING = "pending"
+    PAID = "paid"
+    FAILED = "failed"
+    CASH = "cash"
+    REFUNDED = "refunded"
+
+class PaymentMethod(str, PyEnum):
+    CARD = "card"
+    CASH = "cash"
 class HotelImage(Base):
     __tablename__ = "hotel_images"
 
@@ -97,6 +117,7 @@ class Room(Base):
     bookings = relationship('Booking', back_populates='room', cascade='all, delete')
     images = relationship('RoomImage', back_populates='room', cascade='all, delete')
 
+
 class Booking(Base):
     __tablename__ = 'bookings'
 
@@ -107,8 +128,12 @@ class Booking(Base):
     date_end = Column(Date, nullable=False)
     total_price = Column(Float, nullable=False)
 
+    payment_id = Column(Integer, ForeignKey("payments.id"), nullable=True)
+    status = Column(SQLAEnum(BookingStatus, name="booking_status"), default=BookingStatus.PENDING, nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
     client = relationship('Client', back_populates='bookings')
     room = relationship('Room', back_populates='bookings')
+    payment = relationship("Payment", back_populates="booking")
 class Rating(Base):
     __tablename__ = "ratings"
 
@@ -119,3 +144,17 @@ class Rating(Base):
 
     user = relationship("Person", back_populates="ratings")
     hotel = relationship("Hotel", back_populates="ratings")
+
+
+class Payment(Base):
+    __tablename__ = "payments"
+    id = Column(Integer, primary_key=True, index=True)
+    amount = Column(Float, nullable=False)
+    currency = Column(String(3), default="USD", nullable=False)
+    status = Column(SQLAEnum(PaymentStatus, name="payment_status"), default=PaymentStatus.PENDING, nullable=False)
+    method = Column(SQLAEnum(PaymentMethod, name="payment_method"), nullable=False)
+    stripe_payment_id = Column(String, nullable=True)
+    description = Column(String(500), nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    paid_at = Column(DateTime, nullable=True)
+    booking = relationship("Booking", back_populates="payment", uselist=False)

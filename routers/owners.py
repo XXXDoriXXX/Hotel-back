@@ -8,20 +8,12 @@ from database import get_db
 from dependencies import get_current_user
 from schemas import OwnerCreate
 from models import Owner, Hotel
-import crud
+import crud.room_crud
 
 router = APIRouter(
     prefix="/owners",
     tags=["owners"]
 )
-
-@router.post("/")
-def create_owner(owner: OwnerCreate, db: Session = Depends(get_db)):
-    db_owner = crud.create_owner(db, owner.dict())
-    if not db_owner:
-        raise HTTPException(status_code=400, detail="Owner creation failed")
-    return db_owner
-
 @router.get("/")
 def get_all_owners(db: Session = Depends(get_db)):
     return db.query(Owner).all()
@@ -82,13 +74,11 @@ def get_owner_hotels(current_user: dict = Depends(get_current_user), db: Session
                 "bookings": bookings,
             })
 
-        # Отримуємо зображення для готелів
         hotel_images = [
             {"id": image.id, "hotel_id": image.hotel_id, "image_url": image.image_url}
             for image in hotel.images
         ]
 
-        # Додаємо працівників
         employees = [
             {
                 "id": employee.id,
@@ -124,7 +114,7 @@ def create_room(
     if not current_user["is_owner"]:
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    return crud.create_room(db, room.dict())
+    return crud.room_crud.create_room(db, room.dict())
 
 @router.get("/dashboard", response_model=List[schemas.HotelWithDetails])
 def get_owner_dashboard(current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):

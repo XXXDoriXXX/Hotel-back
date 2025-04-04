@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Body
 from sqlalchemy.orm import Session
 
+from crud.person_crud import create_owner, create_client, authenticate_user
 from models import Person
 from schemas import LoginRequest, Token, PersonCreate, PersonBase
 from database import get_db
-from crud import authenticate_user, create_person, create_owner, create_client
+
 from utils import create_access_token
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -24,10 +25,10 @@ def register(user: PersonCreate, db: Session = Depends(get_db)):
 
     if user.is_owner:
         new_owner = create_owner(db, user.dict())
-        return PersonBase(**new_owner.person.__dict__)  # Перетворюємо у відповідну модель
+        return PersonBase(**new_owner.person.__dict__)
     else:
         new_client = create_client(db, user.dict())
-        return PersonBase(**new_client.person.__dict__)  # Аналогічно
+        return PersonBase(**new_client.person.__dict__)
 
 
 @router.post("/login", response_model=Token)
