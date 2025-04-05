@@ -1,7 +1,9 @@
 import os
+import uuid
 from typing import List, Optional
 from uuid import uuid4
 
+from botocore.exceptions import ClientError
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 from starlette import status
@@ -10,17 +12,16 @@ import schemas
 from crud import room_crud
 from database import get_db
 from dependencies import is_hotel_owner, get_current_user, get_current_owner
-from routers.hotels import DescriptionUpdate
-from schemas import RoomCreate, RoomDetails
-from models import Room, RoomImage, Hotel
+from routers.hotels import DescriptionUpdate, S3_BUCKET, S3_REGION, s3_client
+from models import Room, Hotel, Media
 import crud.room_crud
+from schemas import RoomCreate, RoomDetails
 
 router = APIRouter(
     prefix="/rooms",
     tags=["rooms"]
 )
-UPLOAD_DIRECTORY = "uploaded_images/rooms"
-os.makedirs(UPLOAD_DIRECTORY, exist_ok=True)
+
 ALLOWED_IMAGE_TYPES = ["jpg", "jpeg", "png", "webp"]
 
 @router.post("/", status_code=status.HTTP_201_CREATED)
@@ -125,7 +126,6 @@ def delete_room(
         )
 
 
-@router.post("/{room_id}/images/upload/", status_code=status.HTTP_201_CREATED)
 async def upload_room_image(
         room_id: int,
         file: UploadFile = File(...),
@@ -134,51 +134,49 @@ async def upload_room_image(
 ):
     room = db.query(Room).filter(Room.id == room_id).first()
     if not room:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Room not found"
-        )
+        raise HTTPException(status_code=404, detail="Room not found")
 
     hotel = db.query(Hotel).filter(Hotel.id == room.hotel_id).first()
     if not hotel or hotel.owner_id != current_owner.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to upload images for this room"
-        )
+        raise HTTPException(status_code=403, detail="Not authorized")
 
     file_extension = file.filename.split(".")[-1].lower()
     if file_extension not in ALLOWED_IMAGE_TYPES:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=400,
             detail=f"Invalid file format. Allowed: {', '.join(ALLOWED_IMAGE_TYPES)}"
         )
 
-    filename = f"{uuid4()}.{file_extension}"
-    file_path = os.path.join(UPLOAD_DIRECTORY, filename)
+    filename = f"{uuid.uuid4()}.{file_extension}"
+    s3_key = f"rooms/{room_id}/{filename}"
 
     try:
-        with open(file_path, "wb") as f:
-            f.write(await file.read())
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error saving file: {str(e)}"
+        s3_client.upload_fileobj(
+            file.file,
+            S3_BUCKET,
+            s3_key,
+            ExtraArgs={
+                'ContentType': file.content_type,
+                'ACL': 'public-read'
+            }
         )
 
-    image_url = f"/{UPLOAD_DIRECTORY}/{filename}"
+        image_url = f"https://{S3_BUCKET}.s3.{S3_REGION}.amazonaws.com/{s3_key}"
+        room_image = room_crud.add_room_media(db, room_id=room_id, image_url=image_url)
 
-    try:
-        room_image = room_crud.add_room_image(db, room_id=room_id, image_url=image_url)
         return {
             "id": room_image.id,
             "image_url": image_url,
             "message": "Image uploaded successfully"
         }
-    except Exception as e:
-        if os.path.exists(file_path):
-            os.remove(file_path)
+    except ClientError as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=500,
+            detail=f"Error uploading file to S3: {str(e)}"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
             detail=f"Error saving image record: {str(e)}"
         )
 
@@ -189,47 +187,41 @@ def delete_room_image(
         db: Session = Depends(get_db),
         current_owner: dict = Depends(get_current_owner)
 ):
-    image = db.query(RoomImage).filter(RoomImage.id == image_id).first()
+    image = db.query(Media).filter(Media.id == image_id).first()
     if not image:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Image not found"
-        )
+        raise HTTPException(status_code=404, detail="Image not found")
 
-    room = db.query(Room).filter(Room.id == image.room_id).first()
+    room = db.query(Room).filter(Room.id == image.entity_id).first()
     if not room:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Room not found"
-        )
+        raise HTTPException(status_code=404, detail="Room not found")
 
-    # Verify the owner owns the hotel
     hotel = db.query(Hotel).filter(Hotel.id == room.hotel_id).first()
     if not hotel or hotel.owner_id != current_owner.id:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    try:
+        s3_key = image.image_url.split(f"{S3_BUCKET}.s3.{S3_REGION}.amazonaws.com/")[-1]
+        s3_client.delete_object(Bucket=S3_BUCKET, Key=s3_key)
+
+        db.delete(image)
+        db.commit()
+        return {"message": "Image deleted successfully"}
+    except ClientError as e:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to delete this image"
+            status_code=500,
+            detail=f"Error deleting file from S3: {str(e)}"
         )
 
-    file_path = image.image_url.lstrip("/")
-    if os.path.exists(file_path):
-        try:
-            os.remove(file_path)
-        except Exception as e:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Error deleting file: {str(e)}"
-            )
 
-    db.delete(image)
-    db.commit()
-    return {"message": "Image deleted successfully"}
+from models import Media, EntityType
+from typing import List
+import schemas
 
 
-@router.get("/{room_id}/images/", response_model=List[schemas.RoomImageBase])
+@router.get("/{room_id}/images/", response_model=List[schemas.MediaBase])
 def get_room_images(
-    room_id: int,
-    db: Session = Depends(get_db)
+        room_id: int,
+        db: Session = Depends(get_db)
 ):
     room = db.query(Room).filter(Room.id == room_id).first()
     if not room:
@@ -238,9 +230,12 @@ def get_room_images(
             detail="Room not found"
         )
 
-    images = db.query(RoomImage).filter(RoomImage.room_id == room_id).all()
-    return images
+    images = db.query(Media).filter(
+        Media.entity_type == EntityType.ROOM,
+        Media.entity_id == room_id
+    ).all()
 
+    return images
 
 @router.put("/{room_id}/description")
 def update_room_description(

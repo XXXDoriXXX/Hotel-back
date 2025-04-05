@@ -1,10 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Body
 from sqlalchemy.orm import Session
-
 from crud.person_crud import create_owner, create_client, authenticate_user
 from models import Person
-from schemas import LoginRequest, Token, PersonCreate, PersonBase
 from database import get_db
+from schemas import PersonCreate, PersonBase, LoginRequest, Token
 
 from utils import create_access_token
 

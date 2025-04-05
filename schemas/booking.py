@@ -1,51 +1,53 @@
 from pydantic import BaseModel, validator
 from datetime import date, datetime
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
-from models import PaymentMethod
-from .client import ClientDetails
+from models import PaymentMethod, PaymentStatus
+from .client import Client
+from .payment import PaymentDetails
+
+if TYPE_CHECKING:
+    from .room import RoomDetails
 
 class BookingCreate(BaseModel):
     client_id: int
     room_id: int
     date_start: date
     date_end: date
-    payment_method: PaymentMethod
-@validator('date_end')
-def validate_dates(cls, v, values):
-    if 'date_start' in values and v <= values['date_start']:
-        raise ValueError('End date must be after start date')
-    return v
-class BookingResponse(BaseModel):
-    id: int
-    status: str
-    payment_status: str
+    guests_count: int = 1
 
-class Booking(BaseModel):
-    id: int
-    client_id: int
-    room_id: int
-    date_start: date
-    date_end: date
-    total_price: float
-
-    class Config:
-        from_attributes = True
+    @validator('date_end')
+    def validate_dates(cls, v, values):
+        if 'date_start' in values and v <= values['date_start']:
+            raise ValueError('End date must be after start date')
+        return v
 
 class BookingDetails(BaseModel):
     id: int
-    client_id: int
-    client: ClientDetails
-    date_start: str
-    date_end: str
+    client: Client
+    room: 'RoomDetails'
+    date_start: date
+    date_end: date
+    guests_count: int
     total_price: float
-    payment_id: Optional[int] = None
     status: str
+    payment: Optional[PaymentDetails] = None
     created_at: datetime
-    paid_at: Optional[datetime] = None
+    updated_at: datetime
 
     class Config:
         from_attributes = True
-        json_encoders = {
-            date: lambda v: v.isoformat()
-        }
+
+class BookingResponse(BaseModel):
+    id: int
+    room_id: int
+    client_id: int
+    date_start: date
+    date_end: date
+    guests_count: int
+    total_price: float
+    status: str
+    payment_method: PaymentMethod
+    payment_status: PaymentStatus
+    confirmation_number: str
+    created_at: str

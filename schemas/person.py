@@ -1,31 +1,33 @@
 from pydantic import BaseModel
-from datetime import date
+from datetime import date, datetime
 from typing import Optional
+from .media import MediaBase
+
 
 class PersonBase(BaseModel):
-    id: Optional[int] = None
     first_name: str
     last_name: str
-    email: Optional[str]
+    email: str
     phone: str
-    is_owner: bool
-    birth_date: Optional[date]
-    avatar_url: Optional[str] = None
+    is_owner: bool = False
+    birth_date: Optional[date] = None
+
 
     class Config:
         from_attributes = True
 
 class PersonCreate(PersonBase):
-    first_name: str
-    last_name: str
-    email: Optional[str]
-    phone: str
     password: str
-    is_owner: Optional[bool] = False
-    birth_date: Optional[date]
 
 class Person(PersonBase):
     id: int
+    created_at: datetime
+    updated_at: datetime
+    media: list[MediaBase] = []
+
+    @property
+    def avatar(self) -> Optional[MediaBase]:
+        return next((m for m in self.media if m.entity_type == "avatar"), None)
 
     class Config:
         from_attributes = True

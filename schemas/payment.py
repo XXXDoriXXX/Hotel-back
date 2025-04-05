@@ -1,15 +1,13 @@
 from pydantic import BaseModel, Field
 from datetime import datetime, date
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
-from sqlalchemy import Enum
-
-from schemas import BookingCreate
-
+if TYPE_CHECKING:
+    from .booking import BookingCreate
 
 class PaymentIntentRequest(BaseModel):
     amount: float = Field(..., gt=0, description="Amount must be positive")
-    booking_data: BookingCreate
+    booking_data: 'BookingCreate'
 
 class PaymentIntentResponse(BaseModel):
     payment_intent_id: str
@@ -45,3 +43,17 @@ class PaymentBase(BaseModel):
 class PaymentIntentCreate(BaseModel):
     booking_id: int
     payment_method_id: str
+
+class PaymentDetails(BaseModel):
+    id: int
+    amount: float
+    currency: str
+    status: str
+    method: str
+    stripe_payment_id: Optional[str]
+    refund_amount: Optional[float]
+    created_at: datetime
+    paid_at: Optional[datetime]
+
+    class Config:
+        from_attributes = True

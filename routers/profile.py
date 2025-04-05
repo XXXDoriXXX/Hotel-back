@@ -1,16 +1,19 @@
 import os
+import uuid
+
+from botocore.exceptions import ClientError
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 
 from crud.person_crud import verify_password, get_password_hash
 from dependencies import get_current_user
-from models import Person
+from models import Person, Media, EntityType
 from database import get_db
+from routers.hotels import S3_BUCKET, s3_client, S3_REGION
 from schemas import PersonBase, ChangeCredentialsRequest
 
 router = APIRouter(prefix="/profile", tags=["profile"])
-UPLOAD_DIRECTORY = "uploaded_images/avatars"
-os.makedirs(UPLOAD_DIRECTORY, exist_ok=True)
+
 
 @router.put("/change_avatar")
 async def change_avatar(
@@ -22,45 +25,62 @@ async def change_avatar(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
+    old_avatar = db.query(Media).filter(
+        Media.entity_type == EntityType.AVATAR,
+        Media.entity_id == user.id
+    ).first()
+    if old_avatar:
+        try:
+            s3_key = old_avatar.image_url.split(f"{S3_BUCKET}.s3.{S3_REGION}.amazonaws.com/")[-1]
+            s3_client.delete_object(Bucket=S3_BUCKET, Key=s3_key)
+            db.delete(old_avatar)
+        except ClientError as e:
+            raise HTTPException(status_code=500, detail=f"Error deleting old avatar: {str(e)}")
+
     file_extension = file.filename.split(".")[-1].lower()
     if file_extension not in ["jpg", "jpeg", "png"]:
-        raise HTTPException(status_code=400, detail="Invalid file format. Only jpg, jpeg, and png are allowed.")
+        raise HTTPException(status_code=400, detail="Invalid file format")
 
-    if user.avatar_url:
-        old_file_path = user.avatar_url.lstrip("/")
-        if os.path.exists(old_file_path):
-            os.remove(old_file_path)
-
-    filename = f"{user.id}.{file_extension}"
-    file_path = os.path.join(UPLOAD_DIRECTORY, filename)
+    filename = f"{uuid.uuid4()}.{file_extension}"
+    s3_key = f"avatars/{user.id}/{filename}"
 
     try:
-        with open(file_path, "wb") as f:
-            f.write(await file.read())
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error saving file: {str(e)}")
+        s3_client.upload_fileobj(
+            file.file,
+            S3_BUCKET,
+            s3_key,
+            ExtraArgs={'ContentType': file.content_type, 'ACL': 'public-read'}
+        )
+        image_url = f"https://{S3_BUCKET}.s3.{S3_REGION}.amazonaws.com/{s3_key}"
 
-    user.avatar_url = f"/{UPLOAD_DIRECTORY}/{filename}"
-    db.commit()
-    db.refresh(user)
+        new_avatar = Media(
+            image_url=image_url,
+            entity_type=EntityType.AVATAR,
+            entity_id=user.id,
+            person=user
+        )
+        db.add(new_avatar)
+        db.commit()
 
-    return {"message": "Avatar updated successfully", "avatar_url": user.avatar_url}
+        return {"message": "Avatar updated successfully", "image_url": image_url}
+    except ClientError as e:
+        raise HTTPException(status_code=500, detail=f"Error uploading file: {str(e)}")
 
 
 @router.get("/avatar")
-def get_avatar(db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
-    print("CURRENT USER:", current_user)
+def get_avatar(
+        db: Session = Depends(get_db),
+        current_user: dict = Depends(get_current_user)
+):
+    avatar = db.query(Media).filter(
+        Media.entity_type == EntityType.AVATAR,
+        Media.entity_id == current_user["id"]
+    ).first()
 
-    user = db.query(Person).filter(Person.id == current_user["id"]).first()
-
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    if not user.avatar_url:
+    if not avatar:
         raise HTTPException(status_code=404, detail="Avatar not found")
 
-    return {"avatar_url": user.avatar_url}
-
+    return {"image_url": avatar.image_url}
 
 @router.put("/", response_model=PersonBase)
 def update_profile(

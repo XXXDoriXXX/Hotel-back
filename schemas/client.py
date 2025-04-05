@@ -2,27 +2,15 @@ from pydantic import BaseModel
 from typing import Optional
 from .person import PersonBase
 
+
 class ClientCreate(BaseModel):
-    first_name: str
-    last_name: str
-    email: Optional[str] = None
-    phone: str
-    password: str
+    person_id: int
 
 class Client(BaseModel):
     id: int
-    person_id: int
     person: PersonBase
-
-    class Config:
-        from_attributes = True
-
-class ClientDetails(BaseModel):
-    id: int
-    first_name: str
-    last_name: str
-    email: Optional[str]
-    phone: str
+    created_at: str
+    updated_at: str
 
     class Config:
         from_attributes = True

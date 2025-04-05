@@ -1,24 +1,37 @@
 import os
+import uuid
 from typing import List, Optional
 from uuid import uuid4
 
+import boto3
+from botocore.exceptions import ClientError
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from sqlalchemy.orm import Session, joinedload
 from starlette import status
-
-import schemas
 from database import get_db
-from dependencies import get_current_user, is_hotel_owner, get_current_owner
-from schemas import HotelCreate, HotelWithDetails
-from models import Hotel, HotelImage, Rating, Owner
+from dependencies import get_current_user, get_current_owner
+from models import Hotel, Owner, Media, EntityType
 import crud.hotel_crud
+from schemas import HotelCreate, HotelWithDetails, MediaBase
 from schemas.hotel import HotelAmenitiesUpdate
 
 router = APIRouter(
     prefix="/hotels",
     tags=["hotels"]
 )
+S3_BUCKET = os.getenv('S3_BUCKET')
+S3_REGION = os.getenv('S3_REGION')
+AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID')
+AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY')
+
+s3_client = boto3.client(
+    's3',
+    region_name=S3_REGION,
+    aws_access_key_id=AWS_ACCESS_KEY_ID,
+    aws_secret_access_key=AWS_SECRET_ACCESS_KEY
+)
+
 UPLOAD_DIRECTORY = "uploaded_images/hotels"
 os.makedirs(UPLOAD_DIRECTORY, exist_ok=True)
 
@@ -50,7 +63,6 @@ def search_hotels(
 ):
     query = db.query(Hotel).options(
         joinedload(Hotel.rooms),
-        joinedload(Hotel.images),
         joinedload(Hotel.employees)
     )
 
@@ -63,50 +75,6 @@ def search_hotels(
     if not hotels:
         raise HTTPException(status_code=404, detail="No hotels found")
     return hotels
-
-@router.get("/all_details")
-def get_all_hotels_with_details(db: Session = Depends(get_db)):
-    hotels = db.query(Hotel).all()
-    result = []
-    for hotel in hotels:
-        hotel_images = [
-            {"id": image.id, "image_url": image.image_url}
-            for image in hotel.images
-        ]
-        rooms = []
-        for room in hotel.rooms:
-            room_images = [
-                {"id": image.id, "image_url": image.image_url}
-                for image in room.images
-            ]
-            rooms.append({
-                "id": room.id,
-                "room_number": room.room_number,
-                "room_type": room.room_type,
-                "places": room.places,
-                "price_per_night": room.price_per_night,
-                "images": room_images,
-                "description": room.description,
-            })
-
-        result.append({
-            "id": hotel.id,
-            "name": hotel.name,
-            "address": hotel.address,
-            "images": hotel_images,
-            "amenities":hotel.amenities,
-            "rooms": rooms,
-            "rating":hotel.rating,
-            "rating_count":hotel.rating_count,
-            "views": hotel.views,
-            "description":hotel.description
-        })
-    return result
-
-@router.get("/")
-def get_all_hotels(db: Session = Depends(get_db)):
-    return db.query(Hotel).all()
-
 @router.get("/{hotel_id}", response_model=HotelWithDetails)
 def get_hotel_by_id(
     hotel_id: int,
@@ -114,7 +82,7 @@ def get_hotel_by_id(
 ):
     hotel = db.query(Hotel).options(
         joinedload(Hotel.rooms),
-        joinedload(Hotel.images),
+        joinedload(Hotel.media),
         joinedload(Hotel.employees)
     ).filter(Hotel.id == hotel_id).first()
 
@@ -154,12 +122,14 @@ def delete_hotel(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(e)
         )
+
+
 @router.post("/{hotel_id}/images/upload/", status_code=201)
 async def upload_hotel_image(
-    hotel_id: int,
-    file: UploadFile = File(...),
-    db: Session = Depends(get_db),
-    current_owner: Owner = Depends(get_current_owner)
+        hotel_id: int,
+        file: UploadFile = File(...),
+        db: Session = Depends(get_db),
+        current_owner: Owner = Depends(get_current_owner)
 ):
     hotel = db.query(Hotel).filter(Hotel.id == hotel_id).first()
     if not hotel or hotel.owner_id != current_owner.id:
@@ -172,32 +142,39 @@ async def upload_hotel_image(
             detail="Invalid file format. Only jpg, jpeg, png and webp are allowed."
         )
 
-    filename = f"{uuid4()}.{file_extension}"
-    file_path = os.path.join(UPLOAD_DIRECTORY, filename)
+    filename = f"{uuid.uuid4()}.{file_extension}"
+    s3_key = f"hotels/{hotel_id}/{filename}"
 
     try:
-        with open(file_path, "wb") as f:
-            f.write(await file.read())
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error saving file: {str(e)}"
+        s3_client.upload_fileobj(
+            file.file,
+            S3_BUCKET,
+            s3_key,
+            ExtraArgs={
+                'ContentType': file.content_type,
+                'ACL': 'public-read'
+            }
         )
 
-    try:
-        image_url = f"/uploaded_images/hotels/{filename}"
-        hotel_image = crud.hotel_crud.create_hotel_image(
+        image_url = f"https://{S3_BUCKET}.s3.{S3_REGION}.amazonaws.com/{s3_key}"
+
+        hotel_image = crud.hotel_crud.create_hotel_media(
             db,
             hotel_id=hotel_id,
             image_url=image_url
         )
+
         return {
             "id": hotel_image.id,
             "image_url": image_url,
             "message": "Image uploaded successfully"
         }
+    except ClientError as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error uploading file to S3: {str(e)}"
+        )
     except Exception as e:
-        os.remove(file_path)
         raise HTTPException(
             status_code=500,
             detail=f"Error saving image record: {str(e)}"
@@ -210,29 +187,29 @@ def delete_hotel_image(
         db: Session = Depends(get_db),
         current_owner: Owner = Depends(get_current_owner)
 ):
-    image = db.query(HotelImage).filter(HotelImage.id == image_id).first()
+    image = db.query(Media).filter(Media.id == image_id).first()
     if not image:
         raise HTTPException(status_code=404, detail="Image not found")
 
-    hotel = db.query(Hotel).filter(Hotel.id == image.hotel_id).first()
+    hotel = db.query(Hotel).filter(Hotel.id == image.entity_id).first()
     if not hotel or hotel.owner_id != current_owner.id:
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    file_path = image.image_url.lstrip("/")
-    if os.path.exists(file_path):
-        try:
-            os.remove(file_path)
-        except Exception as e:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Error deleting file: {str(e)}"
-            )
+    try:
+        s3_key = image.image_url.split(f"{S3_BUCKET}.s3.{S3_REGION}.amazonaws.com/")[-1]
+        s3_client.delete_object(Bucket=S3_BUCKET, Key=s3_key)
 
-    db.delete(image)
-    db.commit()
+        db.delete(image)
+        db.commit()
 
-    return {"message": "Image deleted successfully"}
-@router.get("/{hotel_id}/images/", response_model=List[schemas.HotelImageBase])
+        return {"message": "Image deleted successfully"}
+    except ClientError as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error deleting file from S3: {str(e)}"
+        )
+
+@router.get("/{hotel_id}/images", response_model=List[MediaBase])
 def get_hotel_images(
     hotel_id: int,
     db: Session = Depends(get_db)
@@ -241,10 +218,12 @@ def get_hotel_images(
     if not hotel:
         raise HTTPException(status_code=404, detail="Hotel not found")
 
-    images = db.query(HotelImage).filter(HotelImage.hotel_id == hotel_id).all()
+    images = db.query(Media).filter(
+        Media.entity_type == EntityType.HOTEL,
+        Media.entity_id == hotel_id
+    ).all()
+
     return images
-
-
 @router.put("/{hotel_id}/amenities")
 def update_amenities(
     hotel_id: int,
@@ -286,54 +265,10 @@ def increment_views(
         "message": f"Views updated successfully. Total views: {hotel.views}",
         "views": hotel.views
     }
+
 class RatingRequest(BaseModel):
       rating: float
 
-@router.post("/{hotel_id}/rate")
-def add_rating(
-    hotel_id: int,
-    request: RatingRequest,
-    db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
-):
-    user_id = current_user["id"]
-    new_rating = request.rating
-
-    if current_user.get("is_owner"):
-        raise HTTPException(status_code=403, detail="Only clients can rate hotels")
-
-    if not (1 <= new_rating <= 5):
-        raise HTTPException(status_code=400, detail="Rating must be between 1 and 5")
-
-    hotel = db.query(Hotel).filter(Hotel.id == hotel_id).first()
-    if not hotel:
-        raise HTTPException(status_code=404, detail="Hotel not found")
-
-    existing_rating = db.query(Rating).filter(
-        Rating.user_id == user_id, Rating.hotel_id == hotel_id
-    ).first()
-
-    if existing_rating:
-        total_rating = hotel.rating * hotel.rating_count - existing_rating.rating
-        total_rating += new_rating
-        hotel.rating = total_rating / hotel.rating_count
-        existing_rating.rating = new_rating
-    else:
-        total_rating = hotel.rating * hotel.rating_count
-        hotel.rating_count += 1
-        hotel.rating = (total_rating + new_rating) / hotel.rating_count
-
-        new_rating_entry = Rating(user_id=user_id, hotel_id=hotel_id, rating=new_rating)
-        db.add(new_rating_entry)
-
-    db.commit()
-    db.refresh(hotel)
-
-    return {
-        "message": "Rating updated successfully",
-        "rating": hotel.rating,
-        "rating_count": hotel.rating_count
-    }
 class DescriptionUpdate(BaseModel):
     description: str
 @router.put("/{hotel_id}/description")
