@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from models import Hotel, HotelImage
+from models import Hotel, Media, EntityType
 
 def create_hotel(db: Session, hotel_data: dict):
     db_hotel = Hotel(**hotel_data)
@@ -22,9 +22,13 @@ def delete_hotel(db: Session, hotel_id: int):
         return True
     return False
 
-def create_hotel_image(db: Session, hotel_id: int, image_url: str):
-    db_image = HotelImage(hotel_id=hotel_id, image_url=image_url)
-    db.add(db_image)
+def create_hotel_media(db: Session, hotel_id: int, image_url: str):
+    db_media = Media(
+        entity_type=EntityType.HOTEL,
+        entity_id=hotel_id,
+        image_url=image_url
+    )
+    db.add(db_media)
     db.commit()
-    db.refresh(db_image)
-    return db_image
+    db.refresh(db_media)
+    return db_media

@@ -1,61 +1,74 @@
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException, status, Body
+from pydantic import EmailStr
 from sqlalchemy.orm import Session
 
-from crud.person_crud import create_owner, create_client, authenticate_user
-from models import Person
-from schemas import LoginRequest, Token, PersonCreate, PersonBase
+from crud import person_crud
 from database import get_db
+from schemas import ClientCreate, OwnerCreate
+from schemas.auth import Token
 
 from utils import create_access_token
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-
-@router.post("/register", response_model=PersonBase, status_code=status.HTTP_201_CREATED)
-def register(user: PersonCreate, db: Session = Depends(get_db)):
-    existing_user = db.query(Person).filter(
-        (Person.email == user.email) | (Person.phone == user.phone)
+@router.post("/register/client", response_model=Token, status_code=status.HTTP_201_CREATED)
+def register_client(user: ClientCreate, db: Session = Depends(get_db)):
+    existing = db.query(person_crud.Client).filter(
+        (person_crud.Client.email == user.email) | (person_crud.Client.phone == user.phone)
     ).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Client already exists")
 
-    if existing_user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="A user with this email or phone already exists."
-        )
+    new_client = person_crud.create_client(db, user.dict())
 
-    if user.is_owner:
-        new_owner = create_owner(db, user.dict())
-        return PersonBase(**new_owner.person.__dict__)
-    else:
-        new_client = create_client(db, user.dict())
-        return PersonBase(**new_client.person.__dict__)
+    token_data = {
+        "id": new_client.id,
+        "first_name": new_client.first_name,
+        "last_name": new_client.last_name,
+        "email": new_client.email,
+        "phone": new_client.phone,
+        "is_owner": False,
+        "birth_date": new_client.birth_date
+    }
+    token = create_access_token(token_data)
+    return {"access_token": token, "token_type": "bearer"}
+
+
+@router.post("/register/owner", response_model=Token, status_code=status.HTTP_201_CREATED)
+def register_owner(user: OwnerCreate, db: Session = Depends(get_db)):
+    existing = db.query(person_crud.Owner).filter(
+        (person_crud.Owner.email == user.email) | (person_crud.Owner.phone == user.phone)
+    ).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Owner already exists")
+
+    new_owner = person_crud.create_owner(db, user.dict())
+
+    token_data = {
+        "id": new_owner.id,
+        "first_name": new_owner.first_name,
+        "last_name": new_owner.last_name,
+        "email": new_owner.email,
+        "phone": new_owner.phone,
+        "is_owner": True,
+        "birth_date": None,
+        "owner_id": new_owner.id
+    }
+    token = create_access_token(token_data)
+    return {"access_token": token, "token_type": "bearer"}
 
 
 @router.post("/login", response_model=Token)
 def login(
-        email: str = Body(..., embed=True),
-        password: str = Body(..., embed=True),
-        db: Session = Depends(get_db)
+    email: Annotated[EmailStr, Body(embed=True)],
+    password: Annotated[str, Body(embed=True)],
+    db: Session = Depends(get_db)
 ):
-    login_request = LoginRequest(email=email, password=password)
-    user = authenticate_user(db, login_request.email, login_request.password)
-
+    user = person_crud.authenticate_user(db, email, password)
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    access_token = create_access_token({
-        "id": user["id"],
-        "email": user["email"],
-        "is_owner": user["is_owner"],
-        "first_name": user["first_name"],
-        "last_name": user["last_name"],
-        "phone": user["phone"],
-        "birth_date": user["birth_date"],
-        "owner_id": user.get("owner_id")
-    })
-
-    return {"access_token": access_token, "token_type": "bearer"}
+    token = create_access_token(user)
+    return {"access_token": token, "token_type": "bearer"}

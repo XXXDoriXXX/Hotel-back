@@ -1,16 +1,22 @@
-from pydantic import BaseModel
-from datetime import date
-from typing import Optional
-
-class LoginRequest(BaseModel):
-    email: str
+from pydantic import BaseModel, EmailStr
+from datetime import datetime
+class ClientCreate(BaseModel):
+    first_name: str
+    last_name: str
+    email: EmailStr
+    phone: str
     password: str
+    birth_date: datetime
+
+
+class OwnerCreate(BaseModel):
+    first_name: str
+    last_name: str
+    email: EmailStr
+    phone: str
+    password: str
+
 
 class Token(BaseModel):
     access_token: str
-    token_type: str
-
-class ChangeCredentialsRequest(BaseModel):
-    current_password: str
-    new_password: Optional[str] = None
-    new_email: Optional[str] = None
+    token_type: str = "bearer"

@@ -29,24 +29,21 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
 
 
 def get_current_owner(
-        user: dict = Depends(get_current_user),
-        db: Session = Depends(get_db)
+    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ) -> Owner:
-
     if not user.get("is_owner"):
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
+            status_code=403,
             detail="Only owners can perform this action"
         )
 
-    owner = db.query(Owner).filter(Owner.person_id == user["id"]).first()
+    owner = db.query(Owner).filter(Owner.id == user["id"]).first()
     if not owner:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Owner profile not found"
-        )
+        raise HTTPException(status_code=404, detail="Owner not found")
 
     return owner
+
 
 
 def is_hotel_owner(

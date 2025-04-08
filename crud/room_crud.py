@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from models import Room, RoomImage
+from models import Room, Media, EntityType
 
 def create_room(db: Session, room_data: dict):
     db_room = Room(**room_data)
@@ -22,9 +22,13 @@ def delete_room(db: Session, room_id: int):
         return True
     return False
 
-def add_room_image(db: Session, room_id: int, image_url: str):
-    room_image = RoomImage(room_id=room_id, image_url=image_url)
-    db.add(room_image)
+def add_room_media(db: Session, room_id: int, image_url: str):
+    room_media = Media(
+        entity_type=EntityType.ROOM,
+        entity_id=room_id,
+        image_url=image_url
+    )
+    db.add(room_media)
     db.commit()
-    db.refresh(room_image)
-    return room_image
+    db.refresh(room_media)
+    return room_media

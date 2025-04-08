@@ -3,14 +3,13 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy.orm import Session
-from starlette import status
 import stripe
 from database import get_db
-from schemas import BookingCreate, PaymentIntentResponse
 from models import Booking, Room, BookingStatus, PaymentMethod, Payment, PaymentStatus
 from crud.booking_crud import create_booking, delete_booking
-from schemas.booking import BookingResponse
 import logging
+
+from schemas import PaymentIntentResponse, BookingCreate, BookingResponse
 from schemas.payment import PaymentIntentRequest
 
 router = APIRouter(

@@ -1,10 +1,10 @@
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from schemas import EmployeeCreate, Employee  # Використовуємо Pydantic схему Employee
+from schemas import EmployeeCreate, Employee
 from database import get_db
 from dependencies import get_current_user
-from models import Employee as EmployeeModel  # SQLAlchemy модель
+from models import Employee as EmployeeModel
 import crud
 
 router = APIRouter(
