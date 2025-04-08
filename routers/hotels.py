@@ -5,7 +5,7 @@ import os, uuid, boto3
 from database import get_db
 from dependencies import get_current_owner
 from models import Hotel, HotelImg,  Address
-from schemas.hotel import HotelCreate, HotelBase, HotelImgBase, HotelWithImages,
+from schemas.hotel import HotelCreate, HotelBase, HotelImgBase, HotelWithImages
 router = APIRouter(prefix="/hotels", tags=["hotels"])
 
 S3_BUCKET = os.getenv('S3_BUCKET')

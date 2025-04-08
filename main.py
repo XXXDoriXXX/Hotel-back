@@ -2,7 +2,7 @@ import os
 from fastapi import FastAPI
 from database import Base, engine
 from routers import (
-auth, hotels
+auth, hotels, rooms
 )
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -24,7 +24,8 @@ Base.metadata.create_all(bind=engine)
 
 routers = [
     auth.router,
-    hotels.router
+    hotels.router,
+    rooms.router
 ]
 
 for router in routers:
