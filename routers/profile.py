@@ -26,7 +26,6 @@ s3_client = boto3.client(
     aws_secret_access_key=AWS_SECRET_ACCESS_KEY
 )
 
-router = APIRouter(prefix="/profile", tags=["profile"])
 
 @router.put("/change_avatar", response_model=dict)
 async def change_avatar(

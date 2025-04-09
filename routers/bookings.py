@@ -5,12 +5,9 @@ from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy.orm import Session
 import stripe
 from database import get_db
-from models import Booking, Room, BookingStatus, PaymentMethod, Payment, PaymentStatus
+from models import Booking, Room, BookingStatus,Payment, PaymentStatus
 from crud.booking_crud import create_booking, delete_booking
 import logging
-
-from schemas import PaymentIntentResponse, BookingCreate, BookingResponse
-from schemas.payment import PaymentIntentRequest
 
 router = APIRouter(
     prefix="/bookings",

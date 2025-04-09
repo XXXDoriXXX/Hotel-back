@@ -13,6 +13,7 @@ class ProfileUpdateRequest(BaseModel):
         from_attributes = True
 class ChangeCredentialsRequest(BaseModel):
     current_password: str
+    confirm_password: str
     new_password: Optional[str] = None
     new_email: Optional[EmailStr] = None
 class AvatarRequest(BaseModel):
