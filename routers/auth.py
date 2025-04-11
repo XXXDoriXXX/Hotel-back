@@ -6,10 +6,11 @@ from sqlalchemy.orm import Session
 
 from crud import person_crud
 from database import get_db
+from dependencies import oauth2_scheme
 from schemas import ClientCreate, OwnerCreate
 from schemas.auth import Token
 
-from utils import create_access_token
+from utils import create_access_token, verify_access_token
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -72,3 +73,12 @@ def login(
 
     token = create_access_token(user)
     return {"access_token": token, "token_type": "bearer"}
+
+
+@router.get("/me")
+def get_current_user(token: str = Depends(oauth2_scheme)):
+    payload = verify_access_token(token)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    return {"user": payload}
