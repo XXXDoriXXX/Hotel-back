@@ -1,5 +1,7 @@
 import os
 from fastapi import FastAPI
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+
 from database import Base, engine
 from routers import (
 auth, hotels, rooms, profile
@@ -11,7 +13,7 @@ app = FastAPI(
     description="API для системи бронювання готелів",
     version="1.0.0"
 )
-
+app.add_middleware(ProxyHeadersMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
