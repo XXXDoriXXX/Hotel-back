@@ -14,11 +14,15 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:5173",  # локальний фронт
+        "https://hotel-back-production-558e.up.railway.app"  # деплой
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 Base.metadata.create_all(bind=engine)
 
