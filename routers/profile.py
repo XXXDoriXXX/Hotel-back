@@ -28,6 +28,7 @@ s3_client = boto3.client(
 )
 
 
+# ---------------- CHANGE AVATAR IMAGE ----------------
 @router.put("/change_avatar", response_model=dict)
 async def change_avatar(
     file: UploadFile = File(...),
@@ -68,6 +69,8 @@ async def change_avatar(
         return {"image_url": image_url}
     except ClientError as e:
         raise HTTPException(status_code=500, detail=f"Error uploading file: {str(e)}")
+
+    # ---------------- UPDATE OWNER ----------------
 @router.put("/update/owner", response_model=UpdateOwnerResponse)
 def update_owner(
     owner_data: OwnerUpdateRequest,
@@ -107,9 +110,10 @@ def update_owner(
     new_token = create_access_token(token_data)
 
     return {"owner": owner, "new_token": new_token}
-@router.put("/profile", response_model=PersonBase)
-def update_profile(
-    profile_data: ProfileUpdateRequest,
+    # ---------------- UPDATE CLIENT ----------------
+@router.put("/update/client", response_model=PersonBase)
+def update_credentials(
+    credentials: ChangeCredentialsRequest,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
@@ -117,43 +121,31 @@ def update_profile(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    if profile_data.first_name:
-        user.first_name = profile_data.first_name
-    if profile_data.last_name:
-        user.last_name = profile_data.last_name
-    if profile_data.email:
-        user.email = profile_data.email
-    if profile_data.phone:
-        user.phone = profile_data.phone
-    if profile_data.birth_date:
-        user.birth_date = profile_data.birth_date
-
-    db.commit()
-    db.refresh(user)
-    return user
-
-@router.put("/password", response_model=PersonBase)
-def change_password(
-    password_data: ChangeCredentialsRequest,
-    db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
-):
-    user = db.query(Client).filter(Client.id == current_user["id"]).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    if not verify_password(password_data.current_password, user.password):
+    if not verify_password(credentials.current_password, user.password):
         raise HTTPException(status_code=400, detail="Incorrect current password")
 
-    if password_data.new_password != password_data.confirm_password:
-        raise HTTPException(status_code=400, detail="Passwords do not match")
+    if credentials.first_name:
+        user.first_name = credentials.first_name
+    if credentials.last_name:
+        user.last_name = credentials.last_name
+    if credentials.phone:
+        user.phone = credentials.phone
+    if credentials.birth_date:
+        user.birth_date = credentials.birth_date
 
-    user.password = get_password_hash(password_data.new_password)
+    if credentials.new_email:
+        user.email = credentials.new_email
+
+    if credentials.new_password:
+        if credentials.new_password != credentials.confirm_password:
+            raise HTTPException(status_code=400, detail="Passwords do not match")
+        user.password = get_password_hash(credentials.new_password)
+
     db.commit()
     db.refresh(user)
     return user
 
-
+    # ---------------- GET PROFILE ----------------
 @router.get("/", response_model=PersonBase)
 def get_profile(
         db: Session = Depends(get_db),

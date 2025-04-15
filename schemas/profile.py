@@ -16,6 +16,11 @@ class ChangeCredentialsRequest(BaseModel):
     confirm_password: str
     new_password: Optional[str] = None
     new_email: Optional[EmailStr] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    phone: Optional[str] = None
+    birth_date: Optional[datetime] = None
+
 class AvatarRequest(BaseModel):
     avatar_url: Optional[str]
 
