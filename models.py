@@ -132,7 +132,7 @@ class RoomImg(Base):
 class Room(Base):
     __tablename__ = 'rooms'
     id = Column(Integer, primary_key=True, autoincrement=True)
-    room_number = Column(String(10), unique=True, nullable=False)
+    room_number = Column(String(10), unique=False, nullable=False)
     room_type = Column(Enum(RoomType), nullable=False)
     places = Column(Integer, nullable=False)
     price_per_night = Column(Float, nullable=False)

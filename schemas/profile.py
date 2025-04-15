@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from typing import Optional
 class ProfileUpdateRequest(BaseModel):
     first_name: Optional[str]
@@ -29,3 +29,13 @@ class PersonBase(BaseModel):
     avatar_url: Optional[str] = None
     class Config:
         from_attributes = True
+class OwnerUpdateRequest(BaseModel):
+    first_name: str | None = None
+    last_name: str | None = None
+    email: EmailStr | None = None
+    phone: str | None = None
+    current_password: str = Field(..., min_length=6)
+    new_password: str | None = Field(None, min_length=6)
+class UpdateOwnerResponse(BaseModel):
+    owner: PersonBase
+    new_token: str

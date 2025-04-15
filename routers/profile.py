@@ -8,10 +8,11 @@ from sqlalchemy.orm import Session
 
 from crud.person_crud import verify_password, get_password_hash
 from dependencies import get_current_user
-from models import Client
+from models import Client, Owner
 from database import get_db
 from schemas import ProfileUpdateRequest, ChangeCredentialsRequest
-from schemas.profile import PersonBase
+from schemas.profile import PersonBase, OwnerUpdateRequest, UpdateOwnerResponse
+from utils import create_access_token
 
 router = APIRouter(prefix="/profile", tags=["profile"])
 S3_BUCKET = os.getenv('S3_BUCKET')
@@ -67,7 +68,45 @@ async def change_avatar(
         return {"image_url": image_url}
     except ClientError as e:
         raise HTTPException(status_code=500, detail=f"Error uploading file: {str(e)}")
+@router.put("/update/owner", response_model=UpdateOwnerResponse)
+def update_owner(
+    owner_data: OwnerUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    owner = db.query(Owner).filter(Owner.id == current_user["id"]).first()
+    if not owner:
+        raise HTTPException(status_code=404, detail="Owner not found")
 
+    if not verify_password(owner_data.current_password, owner.password):
+        raise HTTPException(status_code=400, detail="Incorrect current password")
+
+    if owner_data.first_name:
+        owner.first_name = owner_data.first_name
+    if owner_data.last_name:
+        owner.last_name = owner_data.last_name
+    if owner_data.email:
+        owner.email = owner_data.email
+    if owner_data.phone:
+        owner.phone = owner_data.phone
+    if owner_data.new_password:
+        owner.password = get_password_hash(owner_data.new_password)
+
+    db.commit()
+    db.refresh(owner)
+
+    token_data = {
+        "id": owner.id,
+        "first_name": owner.first_name,
+        "last_name": owner.last_name,
+        "email": owner.email,
+        "phone": owner.phone,
+        "is_owner": True,
+        "owner_id": owner.id
+    }
+    new_token = create_access_token(token_data)
+
+    return {"owner": owner, "new_token": new_token}
 @router.put("/profile", response_model=PersonBase)
 def update_profile(
     profile_data: ProfileUpdateRequest,
