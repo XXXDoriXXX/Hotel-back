@@ -7,7 +7,7 @@ from typing import List
 import os, uuid, boto3
 from database import get_db
 from dependencies import get_current_owner
-from models import Hotel, HotelImg, Address, Room, Booking, Owner, Payment, AmenityHotel
+from models import Hotel, HotelImg, Address, Room, Booking, Owner, Payment, AmenityHotel, Rating
 from schemas.hotel import HotelCreate, HotelBase, HotelImgBase, HotelWithImagesAndAddress
 router = APIRouter(prefix="/hotels", tags=["hotels"])
 
@@ -64,21 +64,7 @@ def get_owner_hotels(
     return hotels
 
 
-# ---------------- GET HOTEL BY ID ----------------
-@router.get("/{hotel_id}", response_model=HotelWithImagesAndAddress)
-def get_hotel(hotel_id: int, db: Session = Depends(get_db)):
-    hotel = (
-        db.query(Hotel)
-        .options(
-            joinedload(Hotel.images),
-            joinedload(Hotel.amenities)
-        )
-        .filter(Hotel.id == hotel_id)
-        .first()
-    )
-    if not hotel:
-        raise HTTPException(404, "Hotel not found")
-    return hotel
+
 # ---------------- GET ALL HOTELS ----------------
 @router.get("/", response_model=List[HotelBase])
 def get_all_hotels(db: Session = Depends(get_db)):
@@ -221,3 +207,72 @@ def get_hotel_stats(
         "income": income,
         "occupancy": round(occupancy, 2)
     }
+@router.get("/trending", response_model=List[HotelWithImagesAndAddress])
+def get_trending_hotels(
+    skip: int = 0,
+    limit: int = 25,
+    db: Session = Depends(get_db)
+):
+    hotels = (
+        db.query(Hotel)
+        .join(Rating, Rating.hotel_id == Hotel.id, isouter=True)
+        .options(joinedload(Hotel.images), joinedload(Hotel.address))
+        .group_by(Hotel.id)
+        .order_by(func.coalesce(func.sum(Rating.views), 0).desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+    return hotels
+@router.get("/best-deals", response_model=List[HotelWithImagesAndAddress])
+def get_best_deals(
+    skip: int = 0,
+    limit: int = 25,
+    db: Session = Depends(get_db)
+):
+    hotels = (
+        db.query(Hotel)
+        .join(Hotel.rooms)
+        .options(joinedload(Hotel.images), joinedload(Hotel.address))
+        .group_by(Hotel.id)
+        .order_by(func.min(Room.price_per_night))
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+    return hotels
+from models import Rating
+
+@router.get("/popular", response_model=List[HotelWithImagesAndAddress])
+def get_popular_hotels(
+    skip: int = 0,
+    limit: int = 25,
+    db: Session = Depends(get_db)
+):
+    hotels = (
+        db.query(Hotel)
+        .join(Rating, Rating.hotel_id == Hotel.id, isouter=True)
+        .options(joinedload(Hotel.images), joinedload(Hotel.address))
+        .group_by(Hotel.id)
+        .order_by(func.coalesce(func.avg(Rating.rating), 0).desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+    return hotels
+
+# ---------------- GET HOTEL BY ID ----------------
+@router.get("/{hotel_id}", response_model=HotelWithImagesAndAddress)
+def get_hotel(hotel_id: int, db: Session = Depends(get_db)):
+    hotel = (
+        db.query(Hotel)
+        .options(
+            joinedload(Hotel.images),
+            joinedload(Hotel.amenities)
+        )
+        .filter(Hotel.id == hotel_id)
+        .first()
+    )
+    if not hotel:
+        raise HTTPException(404, "Hotel not found")
+    return hotel
