@@ -4,6 +4,9 @@ from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime
 
+from schemas.amenities import AmenityHotelBase
+
+
 class AddressCreate(BaseModel):
     street: str
     city: str
@@ -13,7 +16,17 @@ class AddressCreate(BaseModel):
     latitude: Optional[float]
     longitude: Optional[float]
 
+class AddressBase(BaseModel):
+    street: str
+    city: str
+    state: str | None = None
+    country: str
+    postal_code: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
 
+    class Config:
+        from_attributes = True
 class HotelCreate(BaseModel):
     name: str
     description: Optional[str] = None
@@ -39,18 +52,15 @@ class HotelImgBase(BaseModel):
         from_attributes = True
 
 
-class AmenityHotelBase(BaseModel):
-    id: int
-    hotel_id: int
-    amenity_id: int
+
+
+class HotelWithImagesAndAddress(HotelBase):
+    images: list[HotelImgBase] = []
+    address: AddressBase
+    amenities: List[AmenityHotelBase] = []
 
     class Config:
         from_attributes = True
-
-
-class HotelWithImages(HotelBase):
-    images: List[HotelImgBase] = []
-
 
 class HotelWithAmenities(HotelBase):
     amenities: List[AmenityHotelBase] = []

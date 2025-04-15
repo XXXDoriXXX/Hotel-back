@@ -9,7 +9,9 @@ import uuid, boto3
 from database import get_db
 from dependencies import get_current_owner
 from models import Room, Hotel, RoomImg, AmenityRoom
-from schemas import RoomBase, RoomCreate, RoomDetails, RoomImgBase, AmenityRoomBase
+from schemas import RoomBase, RoomCreate, RoomDetails, RoomImgBase
+from schemas.amenities import AmenityRoomBase
+from schemas.room import RoomCreateRequest
 
 router = APIRouter(prefix="/rooms", tags=["rooms"])
 S3_BUCKET = os.getenv('S3_BUCKET')
@@ -20,30 +22,45 @@ s3_client = boto3.client("s3")
 ALLOWED_IMAGE_TYPES = ["jpg", "jpeg", "png", "webp"]
 
 # ---------------- CREATE ROOM ----------------
-@router.post("/", response_model=RoomBase, status_code=201)
+@router.post("/", response_model=RoomDetails, status_code=201)
 def create_room(
-    room: RoomCreate,
+    room_data: RoomCreateRequest,
     db: Session = Depends(get_db),
-    current_owner = Depends(get_current_owner)
+    current_owner=Depends(get_current_owner)
 ):
-    existing_room = db.query(Room).filter(Room.room_number == room.room_number).first()
+    existing_room = db.query(Room).filter(
+        Room.room_number == room_data.room_number,
+        Room.hotel_id == room_data.hotel_id
+    ).first()
     if existing_room:
-        raise HTTPException(status_code=400, detail="Room number already exists")
+        raise HTTPException(status_code=400, detail="Room number already exists in this hotel")
 
-    hotel = db.query(Hotel).filter(Hotel.id == room.hotel_id).first()
+    hotel = db.query(Hotel).filter(Hotel.id == room_data.hotel_id).first()
     if not hotel or hotel.owner_id != current_owner.id:
         raise HTTPException(403, "Not authorized to add room to this hotel")
 
-    db_room = Room(**room.dict())
+    db_room = Room(**room_data.dict(exclude={"amenity_ids"}))
     db.add(db_room)
     db.commit()
     db.refresh(db_room)
-    return db_room
 
+    if room_data.amenity_ids:
+        for amenity_id in room_data.amenity_ids:
+            db.add(AmenityRoom(room_id=db_room.id, amenity_id=amenity_id))
+
+    db.commit()
+    db.refresh(db_room)
+    return db_room
 # ---------------- GET ALL ROOMS ----------------
-@router.get("/", response_model=List[RoomBase])
-def get_all_rooms(db: Session = Depends(get_db)):
-    return db.query(Room).all()
+@router.get("/", response_model=List[RoomDetails])
+def get_rooms(
+    hotel_id: int = None,
+    db: Session = Depends(get_db)
+):
+    query = db.query(Room)
+    if hotel_id:
+        query = query.filter(Room.hotel_id == hotel_id)
+    return query.all()
 
 # ---------------- GET ROOM BY ID ----------------
 @router.get("/{room_id}", response_model=RoomDetails)
@@ -67,7 +84,33 @@ def delete_room(room_id: int, db: Session = Depends(get_db), current_owner = Dep
     db.delete(room)
     db.commit()
     return {"message": "Room deleted successfully"}
+# ---------------- UPDATE ROOM ----------------
+@router.put("/{room_id}", response_model=RoomDetails)
+def update_room(
+    room_id: int,
+    room_data: RoomCreateRequest,
+    db: Session = Depends(get_db),
+    current_owner=Depends(get_current_owner)
+):
+    room = db.query(Room).filter(Room.id == room_id).first()
+    if not room:
+        raise HTTPException(404, "Room not found")
 
+    hotel = db.query(Hotel).filter(Hotel.id == room.hotel_id).first()
+    if not hotel or hotel.owner_id != current_owner.id:
+        raise HTTPException(403, "Not authorized to update this room")
+
+    for key, value in room_data.dict(exclude={"amenity_ids"}).items():
+        setattr(room, key, value)
+
+    db.query(AmenityRoom).filter(AmenityRoom.room_id == room_id).delete()
+    if room_data.amenity_ids:
+        for amenity_id in room_data.amenity_ids:
+            db.add(AmenityRoom(room_id=room_id, amenity_id=amenity_id))
+
+    db.commit()
+    db.refresh(room)
+    return room
 # ---------------- ADD ROOM IMAGES ----------------
 @router.post("/{room_id}/images", response_model=RoomImgBase)
 async def upload_room_image(
