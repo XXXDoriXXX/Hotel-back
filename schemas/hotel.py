@@ -61,6 +61,10 @@ class HotelWithImagesAndAddress(HotelBase):
 
     class Config:
         from_attributes = True
+class HotelWithStats(BaseModel):
+    hotel: HotelWithImagesAndAddress
+    rating: float
+    views: int
 
 class HotelWithAmenities(HotelBase):
     amenities: List[AmenityHotelBase] = []
