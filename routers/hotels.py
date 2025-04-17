@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session, joinedload
 from typing import List, Optional
 import os, uuid, boto3
 from database import get_db
-from dependencies import get_current_owner
+from dependencies import get_current_owner, get_current_user
 from models import Hotel, HotelImg, Address, Room, Booking, Owner, Payment, AmenityHotel, Rating
 from schemas.hotel import HotelCreate, HotelBase, HotelImgBase, HotelWithImagesAndAddress, HotelWithStats
 
@@ -387,20 +387,88 @@ def get_best_deals(
         HotelWithStats(hotel=h, rating=float(r), views=int(v))
         for h, r, v in results
     ]
+@router.put("/{hotel_id}/rate")
+def rate_hotel(
+    hotel_id: int,
+    value: float = Body(..., gt=0.4, le=5.0),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    if current_user.get("is_owner"):
+        raise HTTPException(403, detail="Only clients can rate hotels")
+
+    hotel = db.query(Hotel).filter(Hotel.id == hotel_id).first()
+    if not hotel:
+        raise HTTPException(404, detail="Hotel not found")
+
+    rating = (
+        db.query(Rating)
+        .filter(Rating.hotel_id == hotel_id, Rating.user_id == current_user["id"])
+        .first()
+    )
+
+    if rating:
+        rating.rating = value
+    else:
+        rating = Rating(hotel_id=hotel_id, user_id=current_user["id"], rating=value, views=1)
+        db.add(rating)
+
+    db.commit()
+    return {"message": "Rating submitted"}
 
 
 # ---------------- GET HOTEL BY ID ----------------
-@router.get("/{hotel_id}", response_model=HotelWithImagesAndAddress)
-def get_hotel(hotel_id: int, db: Session = Depends(get_db)):
+@router.get("/{hotel_id}", response_model=HotelWithStats)
+def get_hotel(
+    hotel_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
     hotel = (
         db.query(Hotel)
         .options(
             joinedload(Hotel.images),
-            joinedload(Hotel.amenities)
+            joinedload(Hotel.amenities),
+            joinedload(Hotel.address)
         )
         .filter(Hotel.id == hotel_id)
         .first()
     )
+
     if not hotel:
         raise HTTPException(404, "Hotel not found")
-    return hotel
+
+    # Calculate rating and views
+    rating = (
+        db.query(func.coalesce(func.avg(Rating.rating), 0))
+        .filter(Rating.hotel_id == hotel_id)
+        .scalar()
+    )
+    views = (
+        db.query(func.coalesce(func.sum(Rating.views), 0))
+        .filter(Rating.hotel_id == hotel_id)
+        .scalar()
+    )
+
+    if not current_user.get("is_owner"):
+        user_rating = (
+            db.query(Rating)
+            .filter(Rating.hotel_id == hotel_id, Rating.user_id == current_user["id"])
+            .first()
+        )
+        if user_rating:
+            user_rating.views += 1
+        else:
+            db.add(Rating(
+                hotel_id=hotel_id,
+                user_id=current_user["id"],
+                rating=0.0,
+                views=1
+            ))
+        db.commit()
+
+    return {
+        "hotel": hotel,
+        "rating": float(rating),
+        "views": int(views)
+    }
