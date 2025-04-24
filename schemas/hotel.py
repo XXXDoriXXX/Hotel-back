@@ -1,9 +1,10 @@
 # schemas/hotel.py
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, date
 
+from models import RoomType
 from schemas.amenities import AmenityHotelBase
 
 
@@ -73,3 +74,18 @@ class HotelWithAmenities(HotelBase):
 class HotelWithAll(HotelBase):
     images: List[HotelImgBase] = []
     amenities: List[AmenityHotelBase] = []
+class HotelSearchParams(BaseModel):
+    city: Optional[str] = None
+    country: Optional[str] = None
+    min_price: Optional[float] = None
+    max_price: Optional[float] = None
+    min_rating: Optional[float] = None
+    room_type: Optional[RoomType] = None
+    amenity_ids: Optional[List[int]] = None
+    has_free_rooms: Optional[bool] = False
+    sort_by: Optional[str] = Field("rating", pattern="^(price|rating|views)$")
+    sort_dir: Optional[str] = Field("desc", pattern="^(asc|desc)$")
+    check_in: Optional[date] = None
+    check_out: Optional[date] = None
+    skip: int = 0
+    limit: int = 25

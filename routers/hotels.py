@@ -7,8 +7,9 @@ from typing import List, Optional
 import os, uuid, boto3
 from database import get_db
 from dependencies import get_current_owner, get_current_user
-from models import Hotel, HotelImg, Address, Room, Booking, Owner, Payment, AmenityHotel, Rating
-from schemas.hotel import HotelCreate, HotelBase, HotelImgBase, HotelWithImagesAndAddress, HotelWithStats
+from models import Hotel, HotelImg, Address, Room, Booking, Owner, Payment, AmenityHotel, Rating, BookingStatus
+from schemas.hotel import HotelCreate, HotelBase, HotelImgBase, HotelWithImagesAndAddress, HotelWithStats, \
+    HotelSearchParams
 
 router = APIRouter(prefix="/hotels", tags=["hotels"])
 
@@ -416,7 +417,78 @@ def rate_hotel(
     db.commit()
     return {"message": "Rating submitted"}
 
+def _base_stats_query(db: Session):
+    return (
+        db.query(
+            Hotel,
+            func.coalesce(func.avg(Rating.rating), 0).label("rating"),
+            func.coalesce(func.sum(Rating.views), 0).label("views")
+        )
+        .outerjoin(Rating, Rating.hotel_id == Hotel.id)
+        .join(Address, Hotel.address_id == Address.id)
+        .join(Room, Room.hotel_id == Hotel.id)
+        .options(joinedload(Hotel.images), joinedload(Hotel.address))
+        .group_by(Hotel.id)
+    )
 
+# ---------------- SEARCH HOTELS ----------------
+@router.post("/search", response_model=List[HotelWithStats])
+def search_hotels(
+    filters: HotelSearchParams,
+    db: Session = Depends(get_db)
+):
+    query = _base_stats_query(db)
+
+    if getattr(filters, 'name', None):
+        query = query.filter(Hotel.name.ilike(f"{filters.name}%"))
+    if getattr(filters, 'description', None):
+        query = query.filter(Hotel.description.ilike(f"%{filters.description}%"))
+    if getattr(filters, 'city', None):
+        query = query.filter(Address.city.ilike(f"{filters.city}%"))
+    if getattr(filters, 'country', None):
+        query = query.filter(Address.country.ilike(f"{filters.country}%"))
+    if getattr(filters, 'state', None):
+        query = query.filter(Address.state.ilike(f"{filters.state}%"))
+    if getattr(filters, 'postal_code', None):
+        query = query.filter(Address.postal_code.ilike(f"{filters.postal_code}%"))
+
+    if filters.min_price is not None:
+        query = query.filter(Room.price_per_night >= filters.min_price)
+    if filters.max_price is not None:
+        query = query.filter(Room.price_per_night <= filters.max_price)
+
+    if filters.min_rating is not None:
+        query = query.having(func.avg(Rating.rating) >= filters.min_rating)
+
+    if filters.room_type:
+        query = query.filter(Room.room_type == filters.room_type)
+    if filters.amenity_ids:
+        query = query.join(AmenityHotel).filter(AmenityHotel.amenity_id.in_(filters.amenity_ids))
+
+    if filters.check_in and filters.check_out:
+        subq = (
+            db.query(Booking.room_id)
+            .filter(
+                Booking.status == BookingStatus.confirmed,
+                Booking.date_end > filters.check_in,
+                Booking.date_start < filters.check_out
+            )
+            .subquery()
+        )
+        query = query.filter(~Room.id.in_(subq))
+
+    sort_map = {
+        "price": func.min(Room.price_per_night),
+        "rating": func.avg(Rating.rating),
+        "views": func.sum(Rating.views)
+    }
+    sort_field = sort_map.get(filters.sort_by, func.avg(Rating.rating))
+    query = query.order_by(sort_field.desc() if filters.sort_dir == "desc" else sort_field.asc())
+
+    query = query.offset(filters.skip).limit(filters.limit)
+
+    results = query.all()
+    return [HotelWithStats(hotel=h, rating=float(r), views=int(v)) for h, r, v in results]
 # ---------------- GET HOTEL BY ID ----------------
 @router.get("/{hotel_id}", response_model=HotelWithStats)
 def get_hotel(
@@ -438,7 +510,6 @@ def get_hotel(
     if not hotel:
         raise HTTPException(404, "Hotel not found")
 
-    # Calculate rating and views
     rating = (
         db.query(func.coalesce(func.avg(Rating.rating), 0))
         .filter(Rating.hotel_id == hotel_id)
