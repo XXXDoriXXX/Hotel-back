@@ -48,6 +48,7 @@ class Owner(Base):
     last_name = Column(String(50), nullable=False)
     email = Column(String(255), unique=True, nullable=False)
     phone = Column(String(20), nullable=False)
+    stripe_account_id = Column(String(255), nullable=True)
     password = Column(String(255), nullable=False)
     hotels = relationship("Hotel", back_populates="owner")
 

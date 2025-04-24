@@ -4,7 +4,7 @@ from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from database import Base, engine
 from routers import (
-auth, hotels, rooms, profile, amenities
+auth, hotels, rooms, profile, amenities,stripe_webhook,payments, bookings
 )
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -33,7 +33,11 @@ routers = [
     hotels.router,
     rooms.router,
     profile.router,
-    amenities.router
+    amenities.router,
+    stripe_webhook.router,
+    payments.router,
+    bookings.router
+
 ]
 
 for router in routers:
