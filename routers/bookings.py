@@ -4,9 +4,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime
 from database import get_db
-from models import Room, Owner, Booking, Payment, Client
-from dependencies import get_current_user
-from schemas.booking import BookingCheckoutRequest
+from models import Room, Owner, Booking, Payment, Client, PaymentError
+from dependencies import get_current_user, get_current_owner
+from schemas.booking import BookingCheckoutRequest, RefundRequest, ManualRefundRequest
 
 router = APIRouter(prefix="/bookings", tags=["bookings"])
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
@@ -82,3 +82,88 @@ def create_checkout_session(
     db.commit()
 
     return {"checkout_url": session.url}
+@router.post("/{booking_id}/refund-request")
+def request_refund(
+    booking_id: int,
+    request: RefundRequest,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    booking = db.query(Booking).filter(Booking.id == booking_id).first()
+    if not booking:
+        raise HTTPException(404, "Booking not found")
+    if booking.client_id != user["id"]:
+        raise HTTPException(403, "You can only cancel your own bookings")
+
+    now = datetime.utcnow()
+    if (booking.date_start - now).total_seconds() < 86400:
+        raise HTTPException(400, "You cannot refund within 24 hours of check-in")
+
+    days_left = (booking.date_start - now).days
+    refund_pct = min(1.0, days_left / 7.0)
+    payment = db.query(Payment).filter(Payment.booking_id == booking_id, Payment.status == "paid").first()
+
+    if not payment:
+        raise HTTPException(400, "No valid payment found for refund")
+
+    refund_amount = round(payment.amount * refund_pct, 2)
+    refund_cents = int(refund_amount * 100)
+
+    try:
+        stripe.Refund.create(
+            payment_intent=payment.stripe_payment_id,
+            amount=refund_cents
+        )
+        payment.status = "refunded"
+        payment.description = f"Auto refund: {refund_pct * 100:.0f}%"
+        db.commit()
+        return {"refunded": refund_amount}
+    except Exception as e:
+        db.add(PaymentError(
+            payment_id=payment.id,
+            error_code="refund_failed",
+            error_message=str(e)
+        ))
+        db.commit()
+        raise HTTPException(500, "Refund failed")
+@router.post("/{booking_id}/refund-manual")
+def manual_refund(
+    booking_id: int,
+    request: ManualRefundRequest,
+    db: Session = Depends(get_db),
+    owner: Owner = Depends(get_current_owner)
+):
+    booking = db.query(Booking).filter(Booking.id == booking_id).first()
+    if not booking:
+        raise HTTPException(404, "Booking not found")
+
+    room = booking.room
+    hotel = room.hotel
+
+    if hotel.owner_id != owner.id:
+        raise HTTPException(403, "You can refund only your own hotel bookings")
+
+    payment = db.query(Payment).filter(Payment.booking_id == booking_id, Payment.status == "paid").first()
+    if not payment:
+        raise HTTPException(400, "No valid payment found")
+
+    if request.amount > payment.amount:
+        raise HTTPException(400, "Refund amount exceeds payment")
+
+    try:
+        stripe.Refund.create(
+            payment_intent=payment.stripe_payment_id,
+            amount=int(request.amount * 100)
+        )
+        payment.status = "refunded"
+        payment.description = f"Manual refund by owner: ${request.amount}"
+        db.commit()
+        return {"refunded": request.amount}
+    except Exception as e:
+        db.add(PaymentError(
+            payment_id=payment.id,
+            error_code="manual_refund_failed",
+            error_message=str(e)
+        ))
+        db.commit()
+        raise HTTPException(500, "Manual refund failed")
