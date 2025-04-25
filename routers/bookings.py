@@ -1,321 +1,168 @@
-from datetime import datetime, timedelta
-from typing import Optional
-
-from fastapi import APIRouter, Depends, HTTPException, Header
-from sqlalchemy.orm import Session
 import stripe
+import os
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from datetime import datetime
 from database import get_db
-from models import Booking, Room, BookingStatus,Payment, PaymentStatus
-from crud.booking_crud import create_booking, delete_booking
-import logging
+from models import Room, Owner, Booking, Payment, Client, PaymentError
+from dependencies import get_current_user, get_current_owner
+from schemas.booking import BookingCheckoutRequest, RefundRequest, ManualRefundRequest
 
-router = APIRouter(
-    prefix="/bookings",
-    tags=["bookings"]
-)
-logger = logging.getLogger(__name__)
-MAX_BOOKING_DAYS = 30
-MIN_CHECKIN_HOURS = 24
+router = APIRouter(prefix="/bookings", tags=["bookings"])
+stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
+DOMAIN = os.getenv("STRIPE_DOMAIN", "http://localhost:5173")
+PLATFORM_FEE_PERCENT = 0.1  # 10%
 
-
-@router.post("/create-payment-intent", response_model=PaymentIntentResponse)
-def create_payment_intent(
-        request: PaymentIntentRequest,
-        db: Session = Depends(get_db)
+@router.post("/checkout")
+def create_checkout_session(
+    data: BookingCheckoutRequest,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user)
 ):
-    validate_booking_dates(request.booking_data)
+    client = db.query(Client).filter(Client.id == user["id"]).first()
+    if not client:
+        raise HTTPException(404, detail="Client not found")
 
-    if not is_room_available(db, request.booking_data):
-        raise HTTPException(
-            status_code=400,
-            detail="Room not available for selected dates"
-        )
+    room = db.query(Room).filter(Room.id == data.room_id).first()
+    if not room:
+        raise HTTPException(404, detail="Room not found")
 
-    try:
-        intent = stripe.PaymentIntent.create(
-            amount=int(request.amount * 100),
-            currency="usd",
-            payment_method_types=["card"],
-            metadata={
-                "client_id": str(request.booking_data.client_id),
-                "room_id": str(request.booking_data.room_id),
-                "dates": f"{request.booking_data.date_start} to {request.booking_data.date_end}"
+    nights = (data.date_end - data.date_start).days
+    if nights < 1:
+        raise HTTPException(400, detail="Invalid date range")
+
+    total_price = int(room.price_per_night * nights * 100)
+    owner = room.hotel.owner
+
+    if not owner.stripe_account_id:
+        raise HTTPException(400, detail="Owner has no Stripe account")
+
+    booking = Booking(
+        client_id=user["id"],
+        room_id=data.room_id,
+        date_start=data.date_start,
+        date_end=data.date_end,
+        status="pending"
+    )
+    db.add(booking)
+    db.commit()
+    db.refresh(booking)
+
+    # Stripe Checkout
+    session = stripe.checkout.Session.create(
+        payment_method_types=["card"],
+        line_items=[{
+            "price_data": {
+                "currency": "usd",
+                "product_data": {"name": f"{room.room_type.value} room"},
+                "unit_amount": total_price,
             },
-            capture_method="manual"
-        )
+            "quantity": 1,
+        }],
+        mode="payment",
+        success_url=f"{DOMAIN}/booking/success?booking_id={booking.id}",
+        cancel_url=f"{DOMAIN}/booking/cancel",
+        payment_intent_data={
+            "application_fee_amount": int(total_price * PLATFORM_FEE_PERCENT),
+            "transfer_data": {
+                "destination": owner.stripe_account_id
+            }
+        },
+        metadata={"booking_id": str(booking.id)}
+    )
 
-        db_payment = Payment(
-            amount=request.amount,
-            status=PaymentStatus.PENDING,
-            method=PaymentMethod.CARD,
-            stripe_payment_id=intent.id,
-            description=f"Booking for room {request.booking_data.room_id}"
-        )
-        db.add(db_payment)
-        db.commit()
-        db.refresh(db_payment)
+    db.add(Payment(
+        booking_id=booking.id,
+        amount=total_price / 100,
+        status="pending",
+        is_card=True,
+        description="Stripe Checkout"
+    ))
+    db.commit()
 
-        return PaymentIntentResponse(
-            payment_intent_id=intent.id,
-            client_secret=intent.client_secret,
-            status=intent.status
-        )
-
-    except stripe.error.StripeError as e:
-        logger.error(f"Stripe error: {str(e)}")
-        raise HTTPException(
-            status_code=400,
-            detail=f"Payment processing error: {str(e)}"
-        )
-    except Exception as e:
-        logger.error(f"Unexpected error: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail="Internal server error"
-        )
-
-
-@router.post("/confirm-booking", response_model=BookingResponse)
-def confirm_booking(
-        booking_data: BookingCreate,
-        payment_intent_id: Optional[str] = None,
-        db: Session = Depends(get_db),
-        user_agent: Optional[str] = Header(None)
+    return {"checkout_url": session.url}
+@router.post("/{booking_id}/refund-request")
+def request_refund(
+    booking_id: int,
+    request: RefundRequest,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user)
 ):
-    try:
-        validate_booking_dates(booking_data)
-
-        room = db.query(Room).filter(Room.id == booking_data.room_id).first()
-        if not room:
-            raise HTTPException(status_code=404, detail="Room not found")
-
-        if not is_room_available(db, booking_data):
-            raise HTTPException(
-                status_code=400,
-                detail="Room not available for selected dates"
-            )
-
-        total_days = (booking_data.date_end - booking_data.date_start).days
-        total_price = total_days * room.price_per_night
-
-        if booking_data.payment_method == PaymentMethod.CASH:
-            return handle_cash_payment(db, booking_data, total_price)
-        else:
-            return handle_card_payment(
-                db, booking_data, total_price, payment_intent_id, user_agent
-            )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Booking confirmation error: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail="Internal server error during booking confirmation"
-        )
-
-
-@router.post("/cancel-booking/{booking_id}")
-def cancel_booking(
-        booking_id: int,
-        db: Session = Depends(get_db)
-):
-
-    try:
-        booking = db.query(Booking).filter(Booking.id == booking_id).first()
-        if not booking:
-            raise HTTPException(status_code=404, detail="Booking not found")
-
-        if booking.status not in [BookingStatus.PENDING, BookingStatus.CONFIRMED]:
-            raise HTTPException(
-                status_code=400,
-                detail="Cannot cancel booking in current status"
-            )
-        if booking.payment and booking.payment.method == PaymentMethod.CARD:
-            handle_payment_refund(booking, db)
-        booking.status = BookingStatus.CANCELLED
-        db.commit()
-
-        return {"message": "Booking cancelled successfully"}
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Cancellation error: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail="Internal server error during cancellation"
-        )
-
-
-@router.get("/")
-def get_all_bookings(db: Session = Depends(get_db)):
-    return db.query(Booking).all()
-
-
-@router.get("/{booking_id}")
-def get_booking(booking_id: int, db: Session = Depends(get_db)):
     booking = db.query(Booking).filter(Booking.id == booking_id).first()
     if not booking:
-        raise HTTPException(status_code=404, detail="Booking not found")
-    return booking
-@router.delete("/{booking_id}")
-def delete_booking(booking_id: int, db: Session = Depends(get_db)):
+        raise HTTPException(404, "Booking not found")
+    if booking.client_id != user["id"]:
+        raise HTTPException(403, "You can only cancel your own bookings")
+
+    now = datetime.utcnow()
+    if (booking.date_start - now).total_seconds() < 86400:
+        raise HTTPException(400, "You cannot refund within 24 hours of check-in")
+
+    days_left = (booking.date_start - now).days
+    refund_pct = min(1.0, days_left / 7.0)
+    payment = db.query(Payment).filter(Payment.booking_id == booking_id, Payment.status == "paid").first()
+
+    if not payment:
+        raise HTTPException(400, "No valid payment found for refund")
+
+    refund_amount = round(payment.amount * refund_pct, 2)
+    refund_cents = int(refund_amount * 100)
 
     try:
-        deleted_booking = delete_booking(db, Booking, booking_id)
-        return deleted_booking
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-
-
-def validate_booking_dates(booking_data: BookingCreate):
-    if booking_data.date_start >= booking_data.date_end:
-        raise HTTPException(
-            status_code=400,
-            detail="End date must be after start date"
+        stripe.Refund.create(
+            payment_intent=payment.stripe_payment_id,
+            amount=refund_cents
         )
-
-    if (booking_data.date_end - booking_data.date_start).days > MAX_BOOKING_DAYS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Maximum booking duration is {MAX_BOOKING_DAYS} days"
-        )
-
-    min_checkin = datetime.now() + timedelta(hours=MIN_CHECKIN_HOURS)
-    if booking_data.date_start < min_checkin.date():
-        raise HTTPException(
-            status_code=400,
-            detail=f"Check-in must be at least {MIN_CHECKIN_HOURS} hours from now"
-        )
-
-
-def is_room_available(db: Session, booking_data: BookingCreate) -> bool:
-    conflicting_bookings = db.query(Booking).filter(
-        Booking.room_id == booking_data.room_id,
-        Booking.date_end > booking_data.date_start,
-        Booking.date_start < booking_data.date_end,
-        Booking.status.in_([BookingStatus.PENDING, BookingStatus.CONFIRMED])
-    ).count()
-
-    return conflicting_bookings == 0
-
-
-def handle_cash_payment(db: Session, booking_data: BookingCreate, total_price: float):
-    db_payment = Payment(
-        amount=total_price,
-        status=PaymentStatus.CASH,
-        method=PaymentMethod.CASH,
-        description=f"Cash booking for room {booking_data.room_id}"
-    )
-    db.add(db_payment)
-    db.commit()
-    db.refresh(db_payment)
-    db_booking = Booking(
-        client_id=booking_data.client_id,
-        room_id=booking_data.room_id,
-        date_start=booking_data.date_start,
-        date_end=booking_data.date_end,
-        total_price=total_price,
-        payment_id=db_payment.id,
-        status=BookingStatus.CONFIRMED
-    )
-    db.add(db_booking)
-    db.commit()
-    db.refresh(db_booking)
-
-    return BookingResponse(
-        id=db_booking.id,
-        status=db_booking.status,
-        payment_status=db_payment.status
-    )
-
-
-def handle_card_payment(
-        db: Session,
-        booking_data: BookingCreate,
-        total_price: float,
-        payment_intent_id: str,
-        user_agent: str
-):
-    if not payment_intent_id:
-        raise HTTPException(
-            status_code=400,
-            detail="Payment intent ID required for card payments"
-        )
-
-    try:
-        intent = stripe.PaymentIntent.retrieve(payment_intent_id)
-
-        if abs(intent.amount - int(total_price * 100)) > 100:
-            raise HTTPException(
-                status_code=400,
-                detail="Payment amount doesn't match booking total"
-            )
-
-        if intent.status != "succeeded":
-            stripe.PaymentIntent.cancel(payment_intent_id)
-            raise HTTPException(
-                status_code=402,
-                detail="Payment not completed",
-                headers={"Retry-After": "300"}
-            )
-
-        payment = db.query(Payment).filter(
-            Payment.stripe_payment_id == payment_intent_id
-        ).first()
-
-        if not payment:
-            raise HTTPException(
-                status_code=400,
-                detail="Payment record not found"
-            )
-
-        payment.status = PaymentStatus.PAID
-        payment.paid_at = datetime.utcnow()
-        payment.description = f"Card payment for booking (User-Agent: {user_agent})"
-
-        db_booking = Booking(
-            client_id=booking_data.client_id,
-            room_id=booking_data.room_id,
-            date_start=booking_data.date_start,
-            date_end=booking_data.date_end,
-            total_price=total_price,
-            payment_id=payment.id,
-            status=BookingStatus.CONFIRMED
-        )
-
-        db.add(db_booking)
+        payment.status = "refunded"
+        payment.description = f"Auto refund: {refund_pct * 100:.0f}%"
         db.commit()
-        db.refresh(db_booking)
+        return {"refunded": refund_amount}
+    except Exception as e:
+        db.add(PaymentError(
+            payment_id=payment.id,
+            error_code="refund_failed",
+            error_message=str(e)
+        ))
+        db.commit()
+        raise HTTPException(500, "Refund failed")
+@router.post("/{booking_id}/refund-manual")
+def manual_refund(
+    booking_id: int,
+    request: ManualRefundRequest,
+    db: Session = Depends(get_db),
+    owner: Owner = Depends(get_current_owner)
+):
+    booking = db.query(Booking).filter(Booking.id == booking_id).first()
+    if not booking:
+        raise HTTPException(404, "Booking not found")
 
-        return BookingResponse(
-            id=db_booking.id,
-            status=db_booking.status,
-            payment_status=payment.status
-        )
+    room = booking.room
+    hotel = room.hotel
 
-    except stripe.error.StripeError as e:
-        logger.error(f"Stripe error during confirmation: {str(e)}")
-        raise HTTPException(
-            status_code=400,
-            detail=f"Payment verification failed: {str(e)}"
-        )
+    if hotel.owner_id != owner.id:
+        raise HTTPException(403, "You can refund only your own hotel bookings")
 
+    payment = db.query(Payment).filter(Payment.booking_id == booking_id, Payment.status == "paid").first()
+    if not payment:
+        raise HTTPException(400, "No valid payment found")
 
-def handle_payment_refund(booking: Booking, db: Session):
+    if request.amount > payment.amount:
+        raise HTTPException(400, "Refund amount exceeds payment")
+
     try:
-        if booking.payment.status == PaymentStatus.PAID:
-            refund = stripe.Refund.create(
-                payment_intent=booking.payment.stripe_payment_id,
-                reason="requested_by_customer"
-            )
-
-            if refund.status == "succeeded":
-                booking.payment.status = PaymentStatus.REFUNDED
-                db.commit()
-            else:
-                logger.warning(f"Refund failed for payment {booking.payment.id}")
-
-    except stripe.error.StripeError as e:
-        logger.error(f"Refund error: {str(e)}")
+        stripe.Refund.create(
+            payment_intent=payment.stripe_payment_id,
+            amount=int(request.amount * 100)
+        )
+        payment.status = "refunded"
+        payment.description = f"Manual refund by owner: ${request.amount}"
+        db.commit()
+        return {"refunded": request.amount}
+    except Exception as e:
+        db.add(PaymentError(
+            payment_id=payment.id,
+            error_code="manual_refund_failed",
+            error_message=str(e)
+        ))
+        db.commit()
+        raise HTTPException(500, "Manual refund failed")
