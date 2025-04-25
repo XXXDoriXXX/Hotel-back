@@ -37,7 +37,6 @@ def create_checkout_session(
     if not owner.stripe_account_id:
         raise HTTPException(400, detail="Owner has no Stripe account")
 
-    # Створення бронювання
     booking = Booking(
         client_id=user["id"],
         room_id=data.room_id,
