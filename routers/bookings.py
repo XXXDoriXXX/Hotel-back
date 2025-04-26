@@ -53,38 +53,101 @@ def create_checkout_session(
     db.commit()
     db.refresh(booking)
 
-    session = stripe.checkout.Session.create(
-        payment_method_types=["card"],
-        line_items=[{
-            "price_data": {
-                "currency": "usd",
-                "product_data": {"name": f"{room.room_type.value} room"},
-                "unit_amount": total_price,
-            },
-            "quantity": 1,
-        }],
-        mode="payment",
-        success_url=f"{DOMAIN}/bookings/redirect/booking-success?booking_id={booking.id}",
-        cancel_url=f"{DOMAIN}/booking/cancel",
-        payment_intent_data={
-            "application_fee_amount": int(total_price * PLATFORM_FEE_PERCENT),
-            "transfer_data": {
-                "destination": owner.stripe_account_id
-            }
-        },
-        metadata={"booking_id": str(booking.id)}
-    )
+    if data.payment_method == "cash":
+        db.add(Payment(
+            booking_id=booking.id,
+            amount=total_price / 100,
+            status="pending",
+            is_card=False,
+            description="Оплата готівкою при заселенні"
+        ))
+        db.commit()
 
-    db.add(Payment(
-        booking_id=booking.id,
-        amount=total_price / 100,
-        status="pending",
-        is_card=True,
-        description="Stripe Checkout"
-    ))
-    db.commit()
+        return {"message": "Booking created, waiting for owner confirmation"}
+
+    elif data.payment_method == "card":
+        session = stripe.checkout.Session.create(
+            payment_method_types=["card"],
+            line_items=[{
+                "price_data": {
+                    "currency": "usd",
+                    "product_data": {"name": f"{room.room_type.value} room"},
+                    "unit_amount": total_price,
+                },
+                "quantity": 1,
+            }],
+            mode="payment",
+            success_url=f"{DOMAIN}/bookings/redirect/booking-success?booking_id={booking.id}",
+            cancel_url=f"{DOMAIN}/booking/cancel",
+            payment_intent_data={
+                "application_fee_amount": int(total_price * PLATFORM_FEE_PERCENT),
+                "transfer_data": {
+                    "destination": owner.stripe_account_id
+                }
+            },
+            metadata={"booking_id": str(booking.id)}
+        )
+
+        db.add(Payment(
+            booking_id=booking.id,
+            amount=total_price / 100,
+            status="pending",
+            is_card=True,
+            description="Stripe Checkout"
+        ))
+        db.commit()
+
+        return {"checkout_url": session.url}
+
+    else:
+        raise HTTPException(400, detail="Invalid payment method")
 
     return {"checkout_url": session.url}
+@router.post("/{booking_id}/confirm-cash")
+def confirm_cash_booking(
+    booking_id: int,
+    db: Session = Depends(get_db),
+    owner: Owner = Depends(get_current_owner)
+):
+    booking = db.query(Booking).filter(Booking.id == booking_id).first()
+    if not booking:
+        raise HTTPException(404, "Booking not found")
+
+    if booking.room.hotel.owner_id != owner.id:
+        raise HTTPException(403, "You can confirm only your own hotel's bookings")
+
+    payment = db.query(Payment).filter(Payment.booking_id == booking_id).first()
+
+    if not payment or not payment.is_card:
+        raise HTTPException(400, "Payment not found or is not cash")
+
+    booking.status = "confirmed"
+    db.commit()
+
+    return {"message": "Cash booking confirmed"}
+@router.post("/{booking_id}/cancel-cash")
+def cancel_cash_booking(
+    booking_id: int,
+    db: Session = Depends(get_db),
+    owner: Owner = Depends(get_current_owner)
+):
+    booking = db.query(Booking).filter(Booking.id == booking_id).first()
+    if not booking:
+        raise HTTPException(404, "Booking not found")
+
+    if booking.room.hotel.owner_id != owner.id:
+        raise HTTPException(403, "You can cancel only your own hotel's bookings")
+
+    payment = db.query(Payment).filter(Payment.booking_id == booking_id).first()
+
+    if not payment or not payment.is_card:
+        raise HTTPException(400, "Payment not found or is not cash")
+
+    booking.status = "cancelled"
+    db.commit()
+
+    return {"message": "Cash booking cancelled"}
+
 @router.post("/{booking_id}/refund-request")
 def request_refund(
     booking_id: int,
@@ -118,6 +181,7 @@ def request_refund(
         )
         payment.status = "refunded"
         payment.description = f"Auto refund: {refund_pct * 100:.0f}%"
+        booking.status = "cancelled"
         db.commit()
         return {"refunded": refund_amount}
     except Exception as e:
@@ -128,6 +192,8 @@ def request_refund(
         ))
         db.commit()
         raise HTTPException(500, "Refund failed")
+
+
 @router.post("/{booking_id}/refund-manual")
 def manual_refund(
     booking_id: int,

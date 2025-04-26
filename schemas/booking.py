@@ -5,6 +5,7 @@ from datetime import datetime
 
 class BookingCheckoutRequest(BaseModel):
     room_id: int
+    payment_method: str
     date_start: datetime
     date_end: datetime
 class RefundRequest(BaseModel):
