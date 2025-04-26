@@ -1,3 +1,6 @@
+from typing import List
+
+from sqlalchemy import func
 from starlette.responses import RedirectResponse
 
 import stripe
@@ -6,9 +9,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime
 from database import get_db
-from models import Room, Owner, Booking, Payment, Client, PaymentError
+from models import Room, Owner, Booking, Payment, Client, PaymentError, Hotel
 from dependencies import get_current_user, get_current_owner
-from schemas.booking import BookingCheckoutRequest, RefundRequest, ManualRefundRequest
+from schemas.booking import BookingCheckoutRequest, RefundRequest, ManualRefundRequest, BookingHistoryItem
 
 router = APIRouter(prefix="/bookings", tags=["bookings"])
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
@@ -170,3 +173,25 @@ def manual_refund(
 @router.get("/redirect/booking-success")
 def redirect_to_app(booking_id: int):
     return RedirectResponse(f"myapp://booking/success?booking_id={booking_id}")
+@router.get("/my", response_model=List[BookingHistoryItem])
+def get_my_bookings(
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    bookings = (
+        db.query(
+            Booking.id.label("booking_id"),
+            Room.room_type,
+            Booking.date_start,
+            Booking.date_end,
+            Hotel.name.label("hotel_name"),
+            (Room.price_per_night * func.DATE_PART('day', Booking.date_end - Booking.date_start)).label("total_price"),
+            Booking.status
+        )
+        .join(Room, Booking.room_id == Room.id)
+        .join(Hotel, Room.hotel_id == Hotel.id)
+        .filter(Booking.client_id == user["id"])
+        .order_by(Booking.created_at.desc())
+        .all()
+    )
+    return bookings
