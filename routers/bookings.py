@@ -1,3 +1,5 @@
+from starlette.responses import RedirectResponse
+
 import stripe
 import os
 from fastapi import APIRouter, Depends, HTTPException
@@ -48,7 +50,6 @@ def create_checkout_session(
     db.commit()
     db.refresh(booking)
 
-    # Stripe Checkout
     session = stripe.checkout.Session.create(
         payment_method_types=["card"],
         line_items=[{
@@ -60,7 +61,7 @@ def create_checkout_session(
             "quantity": 1,
         }],
         mode="payment",
-        success_url=f"{DOMAIN}/booking/success?booking_id={booking.id}",
+        success_url=f"{DOMAIN}/bookings/redirect/booking-success?booking_id={booking.id}",
         cancel_url=f"{DOMAIN}/booking/cancel",
         payment_intent_data={
             "application_fee_amount": int(total_price * PLATFORM_FEE_PERCENT),
@@ -166,3 +167,6 @@ def manual_refund(
         ))
         db.commit()
         raise HTTPException(500, "Manual refund failed")
+@router.get("/redirect/booking-success")
+def redirect_to_app(booking_id: int):
+    return RedirectResponse(f"myapp://booking/success?booking_id={booking_id}")
