@@ -88,7 +88,6 @@ def create_checkout_session(
 @router.post("/{booking_id}/refund-request")
 def request_refund(
     booking_id: int,
-    request: RefundRequest,
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user)
 ):
