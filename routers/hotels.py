@@ -209,34 +209,42 @@ def get_hotel_stats(
         "income": income,
         "occupancy": round(occupancy, 2)
     }
-@router.get("/trending", response_model=List[HotelWithStats])
-def get_trending_hotels(
-    skip: int = 0,
-    limit: int = 25,
-    city: Optional[str] = None,
-    country: Optional[str] = None,
-    db: Session = Depends(get_db)
-):
-    def build_query():
-        return (
-            db.query(
-                Hotel,
-                func.coalesce(func.avg(Rating.rating), 0).label("rating"),
-                func.coalesce(func.sum(Rating.views), 0).label("views")
-            )
-            .join(Rating, Rating.hotel_id == Hotel.id, isouter=True)
-            .join(Address, Hotel.address_id == Address.id)
-            .options(joinedload(Hotel.images), joinedload(Hotel.address))
-            .group_by(Hotel.id)
-            .order_by(func.sum(Rating.views).desc())
+def build_base_query(db: Session, order_field, join_room=False):
+    query = (
+        db.query(
+            Hotel,
+            func.coalesce(func.avg(Rating.rating), 0).label("rating"),
+            func.coalesce(func.sum(Rating.views), 0).label("views")
         )
+        .join(Rating, Rating.hotel_id == Hotel.id, isouter=True)
+        .join(Address, Hotel.address_id == Address.id)
+    )
+
+    if join_room:
+        query = query.join(Room, Room.hotel_id == Hotel.id)
+
+    return (
+        query.options(joinedload(Hotel.images), joinedload(Hotel.address))
+        .group_by(Hotel.id)
+        .order_by(order_field)
+    )
+
+def fetch_hotels(
+    db: Session,
+    order_field,
+    skip: int,
+    limit: int,
+    city: Optional[str],
+    country: Optional[str],
+    join_room=False
+) -> List[HotelWithStats]:
+    query = build_base_query(db, order_field, join_room)
 
     results = []
 
     if city:
         city_hotels = (
-            build_query()
-            .filter(func.lower(Address.city) == city.lower())
+            query.filter(func.lower(Address.city) == city.lower())
             .offset(skip)
             .limit(limit)
             .all()
@@ -246,9 +254,10 @@ def get_trending_hotels(
     if len(results) < limit and country:
         remaining = limit - len(results)
         country_hotels = (
-            build_query()
-            .filter(func.lower(Address.country) == country.lower())
-            .filter(func.lower(Address.city) != city.lower())
+            query.filter(
+                func.lower(Address.country) == country.lower(),
+                func.lower(Address.city) != city.lower()
+            )
             .offset(0)
             .limit(remaining)
             .all()
@@ -257,19 +266,35 @@ def get_trending_hotels(
 
     if len(results) < limit:
         remaining = limit - len(results)
-        all_hotels = (
-            build_query()
-            .filter(func.lower(Address.country) != country.lower())
+        world_hotels = (
+            query.filter(func.lower(Address.country) != country.lower())
             .offset(0)
             .limit(remaining)
             .all()
         )
-        results.extend(all_hotels)
+        results.extend(world_hotels)
 
     return [
         HotelWithStats(hotel=h, rating=float(r), views=int(v))
         for h, r, v in results
     ]
+
+@router.get("/trending", response_model=List[HotelWithStats])
+def get_trending_hotels(
+    skip: int = 0,
+    limit: int = 25,
+    city: Optional[str] = None,
+    country: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    return fetch_hotels(
+        db=db,
+        order_field=func.sum(Rating.views).desc(),
+        skip=skip,
+        limit=limit,
+        city=city,
+        country=country
+    )
 
 @router.get("/popular", response_model=List[HotelWithStats])
 def get_popular_hotels(
@@ -279,56 +304,14 @@ def get_popular_hotels(
     country: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
-    def build_query():
-        return (
-            db.query(
-                Hotel,
-                func.coalesce(func.avg(Rating.rating), 0).label("rating"),
-                func.coalesce(func.sum(Rating.views), 0).label("views")
-            )
-            .join(Rating, Rating.hotel_id == Hotel.id, isouter=True)
-            .join(Address, Hotel.address_id == Address.id)
-            .options(joinedload(Hotel.images), joinedload(Hotel.address))
-            .group_by(Hotel.id)
-            .order_by(func.avg(Rating.rating).desc())
-        )
-
-    results = []
-
-    if city:
-        city_hotels = (
-            build_query()
-            .filter(func.lower(Address.city) == city.lower())
-            .offset(skip)
-            .limit(limit)
-            .all()
-        )
-        results.extend(city_hotels)
-
-    if len(results) < limit and country:
-        remaining = limit - len(results)
-        country_hotels = (
-            build_query()
-            .filter(func.lower(Address.country) == country.lower())
-            .filter(func.lower(Address.city) != city.lower())
-            .offset(0).limit(remaining).all()
-        )
-        results.extend(country_hotels)
-
-    if len(results) < limit:
-        remaining = limit - len(results)
-        all_hotels = (
-            build_query()
-            .filter(func.lower(Address.country) != country.lower())
-            .offset(0).limit(remaining).all()
-        )
-        results.extend(all_hotels)
-
-    return [
-        HotelWithStats(hotel=h, rating=float(r), views=int(v))
-        for h, r, v in results
-    ]
-
+    return fetch_hotels(
+        db=db,
+        order_field=func.avg(Rating.rating).desc(),
+        skip=skip,
+        limit=limit,
+        city=city,
+        country=country
+    )
 
 @router.get("/best-deals", response_model=List[HotelWithStats])
 def get_best_deals(
@@ -338,56 +321,16 @@ def get_best_deals(
     country: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
-    def build_query():
-        return (
-            db.query(
-                Hotel,
-                func.coalesce(func.avg(Rating.rating), 0).label("rating"),
-                func.coalesce(func.sum(Rating.views), 0).label("views")
-            )
-            .join(Room, Room.hotel_id == Hotel.id)
-            .join(Rating, Rating.hotel_id == Hotel.id, isouter=True)
-            .join(Address, Hotel.address_id == Address.id)
-            .options(joinedload(Hotel.images), joinedload(Hotel.address))
-            .group_by(Hotel.id)
-            .order_by(func.min(Room.price_per_night).asc())
-        )
+    return fetch_hotels(
+        db=db,
+        order_field=func.min(Room.price_per_night).asc(),
+        skip=skip,
+        limit=limit,
+        city=city,
+        country=country,
+        join_room=True
+    )
 
-    results = []
-
-    if city:
-        city_hotels = (
-            build_query()
-            .filter(func.lower(Address.city) == city.lower())
-            .offset(skip)
-            .limit(limit)
-            .all()
-        )
-        results.extend(city_hotels)
-
-    if len(results) < limit and country:
-        remaining = limit - len(results)
-        country_hotels = (
-            build_query()
-            .filter(func.lower(Address.country) == country.lower())
-            .filter(func.lower(Address.city) != city.lower())
-            .offset(0).limit(remaining).all()
-        )
-        results.extend(country_hotels)
-
-    if len(results) < limit:
-        remaining = limit - len(results)
-        all_hotels = (
-            build_query()
-            .filter(func.lower(Address.country) != country.lower())
-            .offset(0).limit(remaining).all()
-        )
-        results.extend(all_hotels)
-
-    return [
-        HotelWithStats(hotel=h, rating=float(r), views=int(v))
-        for h, r, v in results
-    ]
 @router.put("/{hotel_id}/rate")
 def rate_hotel(
     hotel_id: int,
