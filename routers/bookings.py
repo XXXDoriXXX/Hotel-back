@@ -1,8 +1,6 @@
 from typing import List
-
 from sqlalchemy import func
 from starlette.responses import RedirectResponse
-
 import stripe
 import os
 from fastapi import APIRouter, Depends, HTTPException
@@ -32,14 +30,33 @@ def create_checkout_session(
     if not room:
         raise HTTPException(404, detail="Room not found")
 
+    if data.date_start >= data.date_end:
+        raise HTTPException(400, detail="End date must be after start date")
+
+    if data.date_start < datetime.utcnow():
+        raise HTTPException(400, detail="Cannot book for past dates")
+
     nights = (data.date_end - data.date_start).days
     if nights < 1:
-        raise HTTPException(400, detail="Invalid date range")
+        raise HTTPException(400, detail="Booking must be at least 1 night")
+
+    overlapping_booking = db.query(Booking).filter(
+        Booking.room_id == data.room_id,
+        Booking.status.in_(["pending", "confirmed"]),
+        Booking.date_end > data.date_start,
+        Booking.date_start < data.date_end
+    ).first()
+
+    if overlapping_booking:
+        raise HTTPException(400, detail="Room already booked for selected dates")
+
+    if data.payment_method not in ["cash", "card"]:
+        raise HTTPException(400, detail="Invalid payment method")
 
     total_price = int(room.price_per_night * nights * 100)
     owner = room.hotel.owner
 
-    if not owner.stripe_account_id:
+    if not owner.stripe_account_id and data.payment_method == "card":
         raise HTTPException(400, detail="Owner has no Stripe account")
 
     booking = Booking(
@@ -59,13 +76,12 @@ def create_checkout_session(
             amount=total_price / 100,
             status="pending",
             is_card=False,
-            description="Оплата готівкою при заселенні"
+            description="Cash payment on arrival"
         ))
         db.commit()
-
         return {"message": "Booking created, waiting for owner confirmation"}
 
-    elif data.payment_method == "card":
+    else:  # card
         session = stripe.checkout.Session.create(
             payment_method_types=["card"],
             line_items=[{
@@ -81,9 +97,7 @@ def create_checkout_session(
             cancel_url=f"{DOMAIN}/booking/cancel",
             payment_intent_data={
                 "application_fee_amount": int(total_price * PLATFORM_FEE_PERCENT),
-                "transfer_data": {
-                    "destination": owner.stripe_account_id
-                }
+                "transfer_data": {"destination": owner.stripe_account_id}
             },
             metadata={"booking_id": str(booking.id)}
         )
@@ -99,10 +113,6 @@ def create_checkout_session(
 
         return {"checkout_url": session.url}
 
-    else:
-        raise HTTPException(400, detail="Invalid payment method")
-
-    return {"checkout_url": session.url}
 @router.post("/{booking_id}/confirm-cash")
 def confirm_cash_booking(
     booking_id: int,
@@ -116,15 +126,19 @@ def confirm_cash_booking(
     if booking.room.hotel.owner_id != owner.id:
         raise HTTPException(403, "You can confirm only your own hotel's bookings")
 
+    if booking.status != "pending":
+        raise HTTPException(400, "Only pending bookings can be confirmed")
+
     payment = db.query(Payment).filter(Payment.booking_id == booking_id).first()
 
-    if not payment or not payment.is_card:
-        raise HTTPException(400, "Payment not found or is not cash")
+    if not payment or payment.is_card:
+        raise HTTPException(400, "Payment is not cash or not found")
 
     booking.status = "confirmed"
     db.commit()
 
     return {"message": "Cash booking confirmed"}
+
 @router.post("/{booking_id}/cancel-cash")
 def cancel_cash_booking(
     booking_id: int,
@@ -138,10 +152,13 @@ def cancel_cash_booking(
     if booking.room.hotel.owner_id != owner.id:
         raise HTTPException(403, "You can cancel only your own hotel's bookings")
 
+    if booking.status != "pending":
+        raise HTTPException(400, "Only pending bookings can be cancelled")
+
     payment = db.query(Payment).filter(Payment.booking_id == booking_id).first()
 
-    if not payment or not payment.is_card:
-        raise HTTPException(400, "Payment not found or is not cash")
+    if not payment or payment.is_card:
+        raise HTTPException(400, "Payment is not cash or not found")
 
     booking.status = "cancelled"
     db.commit()
@@ -157,20 +174,20 @@ def request_refund(
     booking = db.query(Booking).filter(Booking.id == booking_id).first()
     if not booking:
         raise HTTPException(404, "Booking not found")
+
     if booking.client_id != user["id"]:
-        raise HTTPException(403, "You can only cancel your own bookings")
+        raise HTTPException(403, "You can only refund your own bookings")
 
     now = datetime.utcnow()
     if (booking.date_start - now).total_seconds() < 86400:
-        raise HTTPException(400, "You cannot refund within 24 hours of check-in")
+        raise HTTPException(400, "Cannot refund within 24 hours of check-in")
+
+    payment = db.query(Payment).filter(Payment.booking_id == booking_id, Payment.status == "paid").first()
+    if not payment:
+        raise HTTPException(400, "No paid payment found")
 
     days_left = (booking.date_start - now).days
     refund_pct = min(1.0, days_left / 7.0)
-    payment = db.query(Payment).filter(Payment.booking_id == booking_id, Payment.status == "paid").first()
-
-    if not payment:
-        raise HTTPException(400, "No valid payment found for refund")
-
     refund_amount = round(payment.amount * refund_pct, 2)
     refund_cents = int(refund_amount * 100)
 
@@ -193,7 +210,6 @@ def request_refund(
         db.commit()
         raise HTTPException(500, "Refund failed")
 
-
 @router.post("/{booking_id}/refund-manual")
 def manual_refund(
     booking_id: int,
@@ -205,18 +221,15 @@ def manual_refund(
     if not booking:
         raise HTTPException(404, "Booking not found")
 
-    room = booking.room
-    hotel = room.hotel
-
-    if hotel.owner_id != owner.id:
-        raise HTTPException(403, "You can refund only your own hotel bookings")
+    if booking.room.hotel.owner_id != owner.id:
+        raise HTTPException(403, "You can refund only your own hotel's bookings")
 
     payment = db.query(Payment).filter(Payment.booking_id == booking_id, Payment.status == "paid").first()
     if not payment:
-        raise HTTPException(400, "No valid payment found")
+        raise HTTPException(400, "No paid payment found")
 
-    if request.amount > payment.amount:
-        raise HTTPException(400, "Refund amount exceeds payment")
+    if request.amount <= 0 or request.amount > payment.amount:
+        raise HTTPException(400, "Refund amount invalid")
 
     try:
         stripe.Refund.create(
@@ -224,7 +237,7 @@ def manual_refund(
             amount=int(request.amount * 100)
         )
         payment.status = "refunded"
-        payment.description = f"Manual refund by owner: ${request.amount}"
+        payment.description = f"Manual refund: ${request.amount}"
         db.commit()
         return {"refunded": request.amount}
     except Exception as e:
@@ -235,9 +248,11 @@ def manual_refund(
         ))
         db.commit()
         raise HTTPException(500, "Manual refund failed")
+
 @router.get("/redirect/booking-success")
 def redirect_to_app(booking_id: int):
     return RedirectResponse(f"myapp://booking/success?booking_id={booking_id}")
+
 @router.get("/my", response_model=List[BookingHistoryItem])
 def get_my_bookings(
     db: Session = Depends(get_db),
@@ -263,11 +278,7 @@ def get_my_bookings(
 
     result = []
     for booking in bookings:
-        hotel_images = (
-            db.query(HotelImg)
-            .filter(HotelImg.hotel_id == booking.hotel_id)
-            .all()
-        )
+        hotel_images = db.query(HotelImg).filter(HotelImg.hotel_id == booking.hotel_id).all()
 
         result.append({
             "booking_id": booking.booking_id,
