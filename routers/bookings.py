@@ -243,13 +243,6 @@ def get_my_bookings(
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user)
 ):
-    subquery_first_image = (
-        db.query(HotelImg.hotel_id, HotelImg.image_url)
-        .distinct(HotelImg.hotel_id)
-        .order_by(HotelImg.hotel_id, HotelImg.id.asc())
-        .subquery()
-    )
-
     bookings = (
         db.query(
             Booking.id.label("booking_id"),
@@ -259,13 +252,32 @@ def get_my_bookings(
             Hotel.name.label("hotel_name"),
             (Room.price_per_night * func.DATE_PART('day', Booking.date_end - Booking.date_start)).label("total_price"),
             Booking.status,
-            subquery_first_image.c.image_url.label("п")
+            Hotel.id.label("hotel_id")
         )
         .join(Room, Booking.room_id == Room.id)
         .join(Hotel, Room.hotel_id == Hotel.id)
-        .outerjoin(subquery_first_image, subquery_first_image.c.hotel_id == Hotel.id)
         .filter(Booking.client_id == user["id"])
         .order_by(Booking.created_at.desc())
         .all()
     )
-    return bookings
+
+    result = []
+    for booking in bookings:
+        hotel_images = (
+            db.query(HotelImg)
+            .filter(HotelImg.hotel_id == booking.hotel_id)
+            .all()
+        )
+
+        result.append({
+            "booking_id": booking.booking_id,
+            "room_type": booking.room_type,
+            "date_start": booking.date_start,
+            "date_end": booking.date_end,
+            "hotel_name": booking.hotel_name,
+            "total_price": booking.total_price,
+            "status": booking.status,
+            "hotel_images": hotel_images
+        })
+
+    return result
