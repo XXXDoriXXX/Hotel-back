@@ -10,13 +10,9 @@ from utils import verify_access_token
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login", auto_error=False)
 
 
-def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
+def get_current_user(token: Optional[str] = Depends(oauth2_scheme)) -> Optional[dict]:
     if not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        return None
 
     payload = verify_access_token(token)
     if not payload:
@@ -35,12 +31,11 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
     return payload
 
 
-
 def get_current_owner(
-    user: dict = Depends(get_current_user),
+    user: Optional[dict] = Depends(get_current_user),
     db: Session = Depends(get_db)
 ) -> Owner:
-    if not user.get("is_owner"):
+    if not user or not user.get("is_owner"):
         raise HTTPException(
             status_code=403,
             detail="Only owners can perform this action"
