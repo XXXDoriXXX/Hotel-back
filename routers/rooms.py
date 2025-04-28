@@ -1,223 +1,294 @@
+from typing import List
+from sqlalchemy import func
+from starlette.responses import RedirectResponse
+import stripe
 import os
-
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
-from sqlalchemy.orm import Session
-from typing import List, Optional
-import uuid, boto3
-
-
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session, subqueryload
+from datetime import datetime
 from database import get_db
-from dependencies import get_current_owner
-from models import Room, Hotel, RoomImg, AmenityRoom, Booking
-from schemas import RoomBase, RoomCreate, RoomDetails, RoomImgBase
-from schemas.amenities import AmenityRoomBase
-from schemas.room import RoomCreateRequest, BookedDate
+from models import Room, Owner, Booking, Payment, Client, PaymentError, Hotel, HotelImg
+from dependencies import get_current_user, get_current_owner
+from schemas.booking import BookingCheckoutRequest, RefundRequest, ManualRefundRequest, BookingHistoryItem
 
-router = APIRouter(prefix="/rooms", tags=["rooms"])
-S3_BUCKET = os.getenv('S3_BUCKET')
-S3_REGION = os.getenv('S3_REGION')
-AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID')
-AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY')
-s3_client = boto3.client("s3")
-ALLOWED_IMAGE_TYPES = ["jpg", "jpeg", "png", "webp"]
+router = APIRouter(prefix="/bookings", tags=["bookings"])
+stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
+DOMAIN = os.getenv("STRIPE_DOMAIN", "http://localhost:5173")
+PLATFORM_FEE_PERCENT = 0.1  # 10%
 
-# ---------------- CREATE ROOM ----------------
-@router.post("/", response_model=RoomDetails, status_code=201)
-def create_room(
-    room_data: RoomCreateRequest,
+@router.post("/checkout")
+def create_checkout_session(
+    data: BookingCheckoutRequest,
     db: Session = Depends(get_db),
-    current_owner=Depends(get_current_owner)
+    user: dict = Depends(get_current_user)
 ):
-    existing_room = db.query(Room).filter(
-        Room.room_number == room_data.room_number,
-        Room.hotel_id == room_data.hotel_id
+    client = db.query(Client).filter(Client.id == user["id"]).first()
+    if not client:
+        raise HTTPException(404, detail="Client not found")
+
+    room = db.query(Room).filter(Room.id == data.room_id).first()
+    if not room:
+        raise HTTPException(404, detail="Room not found")
+
+    if data.date_start >= data.date_end:
+        raise HTTPException(400, detail="End date must be after start date")
+
+    if data.date_start < datetime.utcnow():
+        raise HTTPException(400, detail="Cannot book for past dates")
+
+    nights = (data.date_end - data.date_start).days
+    if nights < 1:
+        raise HTTPException(400, detail="Booking must be at least 1 night")
+
+    overlapping_booking = db.query(Booking).filter(
+        Booking.room_id == data.room_id,
+        Booking.status.in_(["pending", "confirmed"]),
+        Booking.date_end > data.date_start,
+        Booking.date_start < data.date_end
     ).first()
-    if existing_room:
-        raise HTTPException(status_code=400, detail="Room number already exists in this hotel")
 
-    hotel = db.query(Hotel).filter(Hotel.id == room_data.hotel_id).first()
-    if not hotel or hotel.owner_id != current_owner.id:
-        raise HTTPException(403, "Not authorized to add room to this hotel")
+    if overlapping_booking:
+        raise HTTPException(400, detail="Room already booked for selected dates")
 
-    db_room = Room(**room_data.dict(exclude={"amenity_ids"}))
-    db.add(db_room)
+    if data.payment_method not in ["cash", "card"]:
+        raise HTTPException(400, detail="Invalid payment method")
+
+    total_price = int(room.price_per_night * nights * 100)
+    owner = room.hotel.owner
+
+    if not owner.stripe_account_id and data.payment_method == "card":
+        raise HTTPException(400, detail="Owner has no Stripe account")
+
+    booking = Booking(
+        client_id=user["id"],
+        room_id=data.room_id,
+        date_start=data.date_start,
+        date_end=data.date_end,
+        status="pending"
+    )
+    db.add(booking)
     db.commit()
-    db.refresh(db_room)
+    db.refresh(booking)
 
-    if room_data.amenity_ids:
-        for amenity_id in room_data.amenity_ids:
-            db.add(AmenityRoom(room_id=db_room.id, amenity_id=amenity_id))
+    if data.payment_method == "cash":
+        db.add(Payment(
+            booking_id=booking.id,
+            amount=total_price / 100,
+            status="pending",
+            is_card=False,
+            description="Cash payment on arrival"
+        ))
+        db.commit()
+        return {"message": "Booking created, waiting for owner confirmation"}
 
-    db.commit()
-    db.refresh(db_room)
-    return db_room
-# ---------------- GET ALL ROOMS ----------------
-@router.get("/", response_model=List[RoomDetails])
-def get_rooms(
-    hotel_id: int = None,
-    db: Session = Depends(get_db)
-):
-    query = db.query(Room)
-    if hotel_id:
-        query = query.filter(Room.hotel_id == hotel_id)
-    return query.all()
+    else:  # card
+        session = stripe.checkout.Session.create(
+            payment_method_types=["card"],
+            line_items=[{
+                "price_data": {
+                    "currency": "usd",
+                    "product_data": {"name": f"{room.room_type.value} room"},
+                    "unit_amount": total_price,
+                },
+                "quantity": 1,
+            }],
+            mode="payment",
+            success_url=f"{DOMAIN}/bookings/redirect/booking-success?booking_id={booking.id}",
+            cancel_url=f"{DOMAIN}/booking/cancel",
+            payment_intent_data={
+                "application_fee_amount": int(total_price * PLATFORM_FEE_PERCENT),
+                "transfer_data": {"destination": owner.stripe_account_id}
+            },
+            metadata={"booking_id": str(booking.id)}
+        )
 
-# ---------------- GET ROOM BY ID ----------------
-@router.get("/{room_id}", response_model=RoomDetails)
-def get_room(room_id: int, db: Session = Depends(get_db)):
-    room = db.query(Room).filter(Room.id == room_id).first()
-    if not room:
-        raise HTTPException(404, "Room not found")
-    return room
+        db.add(Payment(
+            booking_id=booking.id,
+            amount=total_price / 100,
+            status="pending",
+            is_card=True,
+            description="Stripe Checkout"
+        ))
+        db.commit()
 
-# ---------------- DELETE ROOM ----------------
-@router.delete("/{room_id}")
-def delete_room(room_id: int, db: Session = Depends(get_db), current_owner = Depends(get_current_owner)):
-    room = db.query(Room).filter(Room.id == room_id).first()
-    if not room:
-        raise HTTPException(404, "Room not found")
+        return {"checkout_url": session.url}
 
-    hotel = db.query(Hotel).filter(Hotel.id == room.hotel_id).first()
-    if not hotel or hotel.owner_id != current_owner.id:
-        raise HTTPException(403, "Not authorized")
-
-    db.delete(room)
-    db.commit()
-    return {"message": "Room deleted successfully"}
-# ---------------- UPDATE ROOM ----------------
-@router.put("/{room_id}", response_model=RoomDetails)
-def update_room(
-    room_id: int,
-    room_data: RoomCreateRequest,
+@router.post("/{booking_id}/confirm-cash")
+def confirm_cash_booking(
+    booking_id: int,
     db: Session = Depends(get_db),
-    current_owner=Depends(get_current_owner)
+    owner: Owner = Depends(get_current_owner)
 ):
-    room = db.query(Room).filter(Room.id == room_id).first()
-    if not room:
-        raise HTTPException(404, "Room not found")
+    booking = db.query(Booking).filter(Booking.id == booking_id).first()
+    if not booking:
+        raise HTTPException(404, "Booking not found")
 
-    hotel = db.query(Hotel).filter(Hotel.id == room.hotel_id).first()
-    if not hotel or hotel.owner_id != current_owner.id:
-        raise HTTPException(403, "Not authorized to update this room")
+    if booking.room.hotel.owner_id != owner.id:
+        raise HTTPException(403, "You can confirm only your own hotel's bookings")
 
-    for key, value in room_data.dict(exclude={"amenity_ids"}).items():
-        setattr(room, key, value)
+    if booking.status != "pending":
+        raise HTTPException(400, "Only pending bookings can be confirmed")
 
-    db.query(AmenityRoom).filter(AmenityRoom.room_id == room_id).delete()
-    if room_data.amenity_ids:
-        for amenity_id in room_data.amenity_ids:
-            db.add(AmenityRoom(room_id=room_id, amenity_id=amenity_id))
+    payment = db.query(Payment).filter(Payment.booking_id == booking_id).first()
 
+    if not payment or payment.is_card:
+        raise HTTPException(400, "Payment is not cash or not found")
+
+    booking.status = "confirmed"
     db.commit()
-    db.refresh(room)
-    return room
-# ---------------- ADD ROOM IMAGES ----------------
-@router.post("/{room_id}/images", response_model=RoomImgBase)
-async def upload_room_image(
-    room_id: int,
-    file: UploadFile = File(...),
+
+    return {"message": "Cash booking confirmed"}
+
+@router.post("/{booking_id}/cancel-cash")
+def cancel_cash_booking(
+    booking_id: int,
     db: Session = Depends(get_db),
-    current_owner = Depends(get_current_owner)
+    owner: Owner = Depends(get_current_owner)
 ):
-    room = db.query(Room).filter(Room.id == room_id).first()
-    if not room:
-        raise HTTPException(404, "Room not found")
+    booking = db.query(Booking).filter(Booking.id == booking_id).first()
+    if not booking:
+        raise HTTPException(404, "Booking not found")
 
-    hotel = db.query(Hotel).filter(Hotel.id == room.hotel_id).first()
-    if not hotel or hotel.owner_id != current_owner.id:
-        raise HTTPException(403, "Not authorized")
+    if booking.room.hotel.owner_id != owner.id:
+        raise HTTPException(403, "You can cancel only your own hotel's bookings")
 
-    ext = file.filename.split(".")[-1].lower()
-    if ext not in ALLOWED_IMAGE_TYPES:
-        raise HTTPException(400, "Invalid image format")
+    if booking.status != "pending":
+        raise HTTPException(400, "Only pending bookings can be cancelled")
 
-    filename = f"{uuid.uuid4()}.{ext}"
-    s3_key = f"rooms/{room_id}/{filename}"
+    payment = db.query(Payment).filter(Payment.booking_id == booking_id).first()
+
+    if not payment or payment.is_card:
+        raise HTTPException(400, "Payment is not cash or not found")
+
+    booking.status = "cancelled"
+    db.commit()
+
+    return {"message": "Cash booking cancelled"}
+
+@router.post("/{booking_id}/refund-request")
+def request_refund(
+    booking_id: int,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    booking = db.query(Booking).filter(Booking.id == booking_id).first()
+    if not booking:
+        raise HTTPException(404, "Booking not found")
+
+    if booking.client_id != user["id"]:
+        raise HTTPException(403, "You can only refund your own bookings")
+
+    now = datetime.utcnow()
+    if (booking.date_start - now).total_seconds() < 86400:
+        raise HTTPException(400, "Cannot refund within 24 hours of check-in")
+
+    payment = db.query(Payment).filter(Payment.booking_id == booking_id, Payment.status == "paid").first()
+    if not payment:
+        raise HTTPException(400, "No paid payment found")
+
+    days_left = (booking.date_start - now).days
+    refund_pct = min(1.0, days_left / 7.0)
+    refund_amount = round(payment.amount * refund_pct, 2)
+    refund_cents = int(refund_amount * 100)
 
     try:
-        s3_client.upload_fileobj(
-            file.file,
-            S3_BUCKET,
-            s3_key,
-            ExtraArgs={"ContentType": file.content_type}
+        stripe.Refund.create(
+            payment_intent=payment.stripe_payment_id,
+            amount=refund_cents
         )
-
-        url = f"https://{S3_BUCKET}.s3.{S3_REGION}.amazonaws.com/{s3_key}"
-        image = RoomImg(room_id=room_id, image_url=url)
-        db.add(image)
+        payment.status = "refunded"
+        payment.description = f"Auto refund: {refund_pct * 100:.0f}%"
+        booking.status = "cancelled"
         db.commit()
-        db.refresh(image)
-        return image
+        return {"refunded": refund_amount}
     except Exception as e:
-        raise HTTPException(500, f"Upload failed: {str(e)}")
+        db.add(PaymentError(
+            payment_id=payment.id,
+            error_code="refund_failed",
+            error_message=str(e)
+        ))
+        db.commit()
+        raise HTTPException(500, "Refund failed")
 
-
-# ---------------- GET ROOM IMAGES ----------------
-@router.get("/{room_id}/images", response_model=List[RoomImgBase])
-def get_room_images(room_id: int, db: Session = Depends(get_db)):
-    return db.query(RoomImg).filter(RoomImg.room_id == room_id).all()
-
-
-# ---------------- DELETE IMAGE BY ID ----------------
-@router.delete("/images/{image_id}")
-def delete_room_image(image_id: int, db: Session = Depends(get_db), current_owner = Depends(get_current_owner)):
-    image = db.query(RoomImg).filter(RoomImg.id == image_id).first()
-    if not image:
-        raise HTTPException(404, "Image not found")
-
-    room = db.query(Room).filter(Room.id == image.room_id).first()
-    hotel = db.query(Hotel).filter(Hotel.id == room.hotel_id).first()
-    if not hotel or hotel.owner_id != current_owner.id:
-        raise HTTPException(403, "Not authorized")
-
-    s3_key = image.image_url.split(f"{S3_BUCKET}.s3.{S3_REGION}.amazonaws.com/")[-1]
-    s3_client.delete_object(Bucket=S3_BUCKET, Key=s3_key)
-
-    db.delete(image)
-    db.commit()
-    return {"message": "Image deleted"}
-
-# ---------------- ADD AMENITIES ----------------
-@router.post("/{room_id}/amenities")
-def add_room_amenities(
-    room_id: int,
-    amenity_ids: List[int],
+@router.post("/{booking_id}/refund-manual")
+def manual_refund(
+    booking_id: int,
+    request: ManualRefundRequest,
     db: Session = Depends(get_db),
-    current_owner = Depends(get_current_owner)
+    owner: Owner = Depends(get_current_owner)
 ):
-    room = db.query(Room).filter(Room.id == room_id).first()
-    if not room:
-        raise HTTPException(404, "Room not found")
+    booking = db.query(Booking).filter(Booking.id == booking_id).first()
+    if not booking:
+        raise HTTPException(404, "Booking not found")
 
-    hotel = db.query(Hotel).filter(Hotel.id == room.hotel_id).first()
-    if not hotel or hotel.owner_id != current_owner.id:
-        raise HTTPException(403, "Not authorized")
+    if booking.room.hotel.owner_id != owner.id:
+        raise HTTPException(403, "You can refund only your own hotel's bookings")
 
-    db.query(AmenityRoom).filter(AmenityRoom.room_id == room_id).delete()
+    payment = db.query(Payment).filter(Payment.booking_id == booking_id, Payment.status == "paid").first()
+    if not payment:
+        raise HTTPException(400, "No paid payment found")
 
-    for amenity_id in amenity_ids:
-        db.add(AmenityRoom(room_id=room_id, amenity_id=amenity_id))
+    if request.amount <= 0 or request.amount > payment.amount:
+        raise HTTPException(400, "Refund amount invalid")
 
-    db.commit()
-    return {"message": "Room amenities updated"}
-
-# ---------------- GET AMENITIES  ----------------
-@router.get("/{room_id}/amenities", response_model=List[AmenityRoomBase])
-def get_room_amenities(room_id: int, db: Session = Depends(get_db)):
-    room = db.query(Room).filter(Room.id == room_id).first()
-    if not room:
-        raise HTTPException(404, "Room not found")
-
-    return db.query(AmenityRoom).filter(AmenityRoom.room_id == room_id).all()
-
-@router.get("/{room_id}/booked-dates", response_model=List[BookedDate])
-def get_booked_dates(room_id: int, db: Session = Depends(get_db)):
-    bookings = (
-        db.query(Booking)
-        .filter(
-            Booking.room_id == room_id,
-            Booking.status == "confirmed"
+    try:
+        stripe.Refund.create(
+            payment_intent=payment.stripe_payment_id,
+            amount=int(request.amount * 100)
         )
+        payment.status = "refunded"
+        payment.description = f"Manual refund: ${request.amount}"
+        db.commit()
+        return {"refunded": request.amount}
+    except Exception as e:
+        db.add(PaymentError(
+            payment_id=payment.id,
+            error_code="manual_refund_failed",
+            error_message=str(e)
+        ))
+        db.commit()
+        raise HTTPException(500, "Manual refund failed")
+
+@router.get("/redirect/booking-success")
+def redirect_to_app(booking_id: int):
+    return RedirectResponse(f"myapp://booking/success?booking_id={booking_id}")
+
+@router.get("/my", response_model=List[BookingHistoryItem])
+def get_my_bookings(
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    bookings = (
+        db.query(
+            Booking.id.label("booking_id"),
+            Room.room_type,
+            Booking.date_start,
+            Booking.date_end,
+            Hotel.name.label("hotel_name"),
+            (Room.price_per_night * func.DATE_PART('day', Booking.date_end - Booking.date_start)).label("total_price"),
+            Booking.status,
+            Hotel.id.label("hotel_id")
+        )
+        .join(Room, Booking.room_id == Room.id)
+        .join(Hotel, Room.hotel_id == Hotel.id)
+        .filter(Booking.client_id == user["id"])
+        .order_by(Booking.created_at.desc())
         .all()
     )
-    return [{"start_date": booking.date_start.date(), "end_date": booking.date_end.date()} for booking in bookings]
+
+    result = []
+    for booking in bookings:
+        hotel_images = db.query(HotelImg).filter(HotelImg.hotel_id == booking.hotel_id).all()
+
+        result.append({
+            "booking_id": booking.booking_id,
+            "room_type": booking.room_type,
+            "date_start": booking.date_start,
+            "date_end": booking.date_end,
+            "hotel_name": booking.hotel_name,
+            "total_price": booking.total_price,
+            "status": booking.status,
+            "hotel_images": hotel_images
+        })
+
+    return result
