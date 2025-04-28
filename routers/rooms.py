@@ -8,10 +8,10 @@ import uuid, boto3
 
 from database import get_db
 from dependencies import get_current_owner
-from models import Room, Hotel, RoomImg, AmenityRoom
+from models import Room, Hotel, RoomImg, AmenityRoom, Booking
 from schemas import RoomBase, RoomCreate, RoomDetails, RoomImgBase
 from schemas.amenities import AmenityRoomBase
-from schemas.room import RoomCreateRequest
+from schemas.room import RoomCreateRequest, BookedDate
 
 router = APIRouter(prefix="/rooms", tags=["rooms"])
 S3_BUCKET = os.getenv('S3_BUCKET')
@@ -209,3 +209,15 @@ def get_room_amenities(room_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404, "Room not found")
 
     return db.query(AmenityRoom).filter(AmenityRoom.room_id == room_id).all()
+
+@router.get("/{room_id}/booked-dates", response_model=List[BookedDate])
+def get_booked_dates(room_id: int, db: Session = Depends(get_db)):
+    bookings = (
+        db.query(Booking)
+        .filter(
+            Booking.room_id == room_id,
+            Booking.status == "confirmed"
+        )
+        .all()
+    )
+    return [{"start_date": booking.date_start.date(), "end_date": booking.date_end.date()} for booking in bookings]

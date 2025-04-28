@@ -1,3 +1,5 @@
+from datetime import date
+
 from pydantic import BaseModel
 from typing import Optional, List
 from models import RoomType
@@ -50,3 +52,6 @@ class RoomCreateRequest(BaseModel):
 class RoomWithAmenities(RoomBase):
     amenities: List[AmenityRoomBase] = []
 
+class BookedDate(BaseModel):
+    start_date: date
+    end_date: date
