@@ -1,7 +1,10 @@
-from typing import Optional
+from typing import Optional, List
 
 from pydantic import BaseModel
 from datetime import datetime
+
+from schemas import HotelImgBase
+
 
 class BookingCheckoutRequest(BaseModel):
     room_id: int
@@ -20,7 +23,7 @@ class BookingHistoryItem(BaseModel):
     hotel_name: str
     total_price: float
     status: str
-    hotel_image_url: Optional[str] = None
+    hotel_images: List[HotelImgBase]
 
     class Config:
         from_attributes = True
