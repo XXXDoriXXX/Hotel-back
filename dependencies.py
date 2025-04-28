@@ -7,10 +7,16 @@ from database import get_db
 from models import Hotel, Owner
 from utils import verify_access_token
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login", auto_error=False)
 
 
 def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     payload = verify_access_token(token)
     if not payload:
@@ -19,6 +25,7 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
             detail="Invalid token",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
     if "is_owner" not in payload:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -26,6 +33,7 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
         )
 
     return payload
+
 
 
 def get_current_owner(

@@ -259,7 +259,7 @@ def get_my_bookings(
             Hotel.name.label("hotel_name"),
             (Room.price_per_night * func.DATE_PART('day', Booking.date_end - Booking.date_start)).label("total_price"),
             Booking.status,
-            subquery_first_image.c.image_url.label("hotel_image_url")
+            subquery_first_image.c.image_url.label("п")
         )
         .join(Room, Booking.room_id == Room.id)
         .join(Hotel, Room.hotel_id == Hotel.id)
