@@ -14,12 +14,13 @@ class ManualRefundRequest(BaseModel):
     amount: float
 class BookingHistoryItem(BaseModel):
     booking_id: int
-    hotel_name: str
     room_type: str
     date_start: datetime
     date_end: datetime
+    hotel_name: str
     total_price: float
     status: str
+    hotel_image_url: Optional[str] = None
 
     class Config:
         from_attributes = True
