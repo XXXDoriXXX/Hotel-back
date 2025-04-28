@@ -51,16 +51,22 @@ def get_current_owner(
 
 def is_hotel_owner(
         hotel_id: int,
-        user: dict = Depends(get_current_user),
+        user: Optional[dict] = Depends(get_current_user),
         db: Session = Depends(get_db)
 ) -> Hotel:
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
 
     hotel = db.query(Hotel).filter(Hotel.id == hotel_id).first()
     if not hotel:
         raise HTTPException(status_code=404, detail="Hotel not found")
 
     owner = db.query(Owner).filter(Owner.id == hotel.owner_id).first()
-    if not owner or owner.person_id != user["id"]:
+    if not owner or owner.id != user["id"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to modify this hotel"
