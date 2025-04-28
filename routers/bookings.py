@@ -6,10 +6,10 @@ from starlette.responses import RedirectResponse
 import stripe
 import os
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, subqueryload
 from datetime import datetime
 from database import get_db
-from models import Room, Owner, Booking, Payment, Client, PaymentError, Hotel
+from models import Room, Owner, Booking, Payment, Client, PaymentError, Hotel, HotelImg
 from dependencies import get_current_user, get_current_owner
 from schemas.booking import BookingCheckoutRequest, RefundRequest, ManualRefundRequest, BookingHistoryItem
 
@@ -243,6 +243,13 @@ def get_my_bookings(
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user)
 ):
+    subquery_first_image = (
+        db.query(HotelImg.hotel_id, HotelImg.image_url)
+        .distinct(HotelImg.hotel_id)
+        .order_by(HotelImg.hotel_id, HotelImg.id.asc())
+        .subquery()
+    )
+
     bookings = (
         db.query(
             Booking.id.label("booking_id"),
@@ -251,10 +258,12 @@ def get_my_bookings(
             Booking.date_end,
             Hotel.name.label("hotel_name"),
             (Room.price_per_night * func.DATE_PART('day', Booking.date_end - Booking.date_start)).label("total_price"),
-            Booking.status
+            Booking.status,
+            subquery_first_image.c.image_url.label("hotel_image_url")
         )
         .join(Room, Booking.room_id == Room.id)
         .join(Hotel, Room.hotel_id == Hotel.id)
+        .outerjoin(subquery_first_image, subquery_first_image.c.hotel_id == Hotel.id)
         .filter(Booking.client_id == user["id"])
         .order_by(Booking.created_at.desc())
         .all()
