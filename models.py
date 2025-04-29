@@ -11,7 +11,8 @@ class RoomType(enum.Enum):
     presidential = "presidential"
 
 class BookingStatus(enum.Enum):
-    pending = "pending"
+    pending_payment = "pending_payment"
+    awaiting_confirmation = "awaiting_confirmation"
     confirmed = "confirmed"
     cancelled = "cancelled"
     completed = "completed"

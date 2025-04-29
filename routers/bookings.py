@@ -15,7 +15,6 @@ router = APIRouter(prefix="/bookings", tags=["bookings"])
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 DOMAIN = os.getenv("STRIPE_DOMAIN", "http://localhost:5173")
 PLATFORM_FEE_PERCENT = 0.1  # 10%
-
 @router.post("/checkout")
 def create_checkout_session(
     data: BookingCheckoutRequest,
@@ -42,7 +41,7 @@ def create_checkout_session(
 
     overlapping_booking = db.query(Booking).filter(
         Booking.room_id == data.room_id,
-        Booking.status.in_(["pending", "confirmed"]),
+        Booking.status.in_(["pending_payment", "awaiting_confirmation", "confirmed"]),
         Booking.date_end > data.date_start,
         Booking.date_start < data.date_end
     ).first()
@@ -59,12 +58,14 @@ def create_checkout_session(
     if not owner.stripe_account_id and data.payment_method == "card":
         raise HTTPException(400, detail="Owner has no Stripe account")
 
+    booking_status = "awaiting_confirmation" if data.payment_method == "cash" else "pending_payment"
+
     booking = Booking(
         client_id=user["id"],
         room_id=data.room_id,
         date_start=data.date_start,
         date_end=data.date_end,
-        status="pending"
+        status=booking_status
     )
     db.add(booking)
     db.commit()
@@ -81,7 +82,7 @@ def create_checkout_session(
         db.commit()
         return {"message": "Booking created, waiting for owner confirmation"}
 
-    else:  # card
+    else:
         session = stripe.checkout.Session.create(
             payment_method_types=["card"],
             line_items=[{
@@ -113,6 +114,7 @@ def create_checkout_session(
 
         return {"checkout_url": session.url}
 
+
 @router.post("/{booking_id}/confirm-cash")
 def confirm_cash_booking(
     booking_id: int,
@@ -126,8 +128,8 @@ def confirm_cash_booking(
     if booking.room.hotel.owner_id != owner.id:
         raise HTTPException(403, "You can confirm only your own hotel's bookings")
 
-    if booking.status != "pending":
-        raise HTTPException(400, "Only pending bookings can be confirmed")
+    if booking.status != "awaiting_confirmation":
+        raise HTTPException(400, "Only awaiting confirmation bookings can be confirmed")
 
     payment = db.query(Payment).filter(Payment.booking_id == booking_id).first()
 
@@ -135,9 +137,12 @@ def confirm_cash_booking(
         raise HTTPException(400, "Payment is not cash or not found")
 
     booking.status = "confirmed"
+    payment.status = "paid"
+    payment.paid_at = datetime.utcnow()
     db.commit()
 
     return {"message": "Cash booking confirmed"}
+
 
 @router.post("/{booking_id}/cancel-cash")
 def cancel_cash_booking(
@@ -152,8 +157,8 @@ def cancel_cash_booking(
     if booking.room.hotel.owner_id != owner.id:
         raise HTTPException(403, "You can cancel only your own hotel's bookings")
 
-    if booking.status != "pending":
-        raise HTTPException(400, "Only pending bookings can be cancelled")
+    if booking.status != "awaiting_confirmation":
+        raise HTTPException(400, "Only awaiting confirmation bookings can be cancelled")
 
     payment = db.query(Payment).filter(Payment.booking_id == booking_id).first()
 
@@ -161,6 +166,7 @@ def cancel_cash_booking(
         raise HTTPException(400, "Payment is not cash or not found")
 
     booking.status = "cancelled"
+    payment.status = "cancelled"
     db.commit()
 
     return {"message": "Cash booking cancelled"}
