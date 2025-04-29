@@ -18,7 +18,7 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
     try:
         event = stripe.Webhook.construct_event(payload, sig_header, endpoint_secret)
     except stripe.error.SignatureVerificationError:
-        raise HTTPException(status_code=400, detail="Invalid signature")
+        raise HTTPException(status_code=400, detail="Invalid Stripe signature")
 
     if event["type"] == "checkout.session.completed":
         session = event["data"]["object"]
@@ -26,21 +26,26 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         booking_id = metadata.get("booking_id")
 
         if not booking_id:
-            return {"status": "no booking_id in metadata"}
+            return {"status": "ok, no booking_id in metadata"}
 
         booking = db.query(Booking).filter(Booking.id == int(booking_id)).first()
         if not booking:
-            return {"status": "booking not found"}
+            return {"status": "ok, booking not found"}
+
+        if booking.status != "pending_payment":
+            return {"status": "ok, booking is not pending payment"}
+
+        payment = db.query(Payment).filter(Payment.booking_id == booking.id).first()
+        if not payment:
+            return {"status": "ok, payment not found"}
 
         booking.status = "confirmed"
-        payment = db.query(Payment).filter(Payment.booking_id == booking.id).first()
         payment.status = "paid"
         payment.stripe_payment_id = session["payment_intent"]
         payment.paid_at = datetime.utcnow()
 
         db.commit()
         return {"status": "success"}
-
 
     elif event["type"] == "payment_intent.payment_failed":
         intent = event["data"]["object"]
