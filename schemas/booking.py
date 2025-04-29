@@ -17,6 +17,7 @@ class ManualRefundRequest(BaseModel):
     amount: float
 class BookingHistoryItem(BaseModel):
     booking_id: int
+    room_id: int
     room_type: str
     date_start: datetime
     date_end: datetime

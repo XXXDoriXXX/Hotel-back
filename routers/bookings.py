@@ -184,12 +184,21 @@ def request_refund(
     if booking.client_id != user["id"]:
         raise HTTPException(403, "You can only refund your own bookings")
 
+    payment = db.query(Payment).filter(Payment.booking_id == booking_id).first()
+    if not payment:
+        raise HTTPException(400, "Payment not found")
+
+    if not payment.is_card:
+        db.delete(payment)
+        db.delete(booking)
+        db.commit()
+        return {"message": "Cash booking deleted successfully"}
+
     now = datetime.utcnow()
     if (booking.date_start - now).total_seconds() < 86400:
         raise HTTPException(400, "Cannot refund within 24 hours of check-in")
 
-    payment = db.query(Payment).filter(Payment.booking_id == booking_id, Payment.status == "paid").first()
-    if not payment:
+    if payment.status != "paid":
         raise HTTPException(400, "No paid payment found")
 
     days_left = (booking.date_start - now).days
@@ -267,6 +276,7 @@ def get_my_bookings(
     bookings = (
         db.query(
             Booking.id.label("booking_id"),
+            Booking.room_id,
             Room.room_type,
             Booking.date_start,
             Booking.date_end,
@@ -288,6 +298,7 @@ def get_my_bookings(
 
         result.append({
             "booking_id": booking.booking_id,
+            "room_id": booking.room_id,
             "room_type": booking.room_type,
             "date_start": booking.date_start,
             "date_end": booking.date_end,
