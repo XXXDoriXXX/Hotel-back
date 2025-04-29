@@ -1,6 +1,7 @@
 import os
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import uuid, boto3
@@ -216,7 +217,10 @@ def get_booked_dates(room_id: int, db: Session = Depends(get_db)):
         db.query(Booking)
         .filter(
             Booking.room_id == room_id,
-            Booking.status == "confirmed"
+            or_(
+                Booking.status == "confirmed",
+                Booking.status == "awaiting_confirmation"
+            )
         )
         .all()
     )
