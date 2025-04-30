@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy import func
+from sqlalchemy.orm import Session, joinedload
 from typing import List
 
 from database import get_db
-from models import FavoriteHotel, Hotel
+from models import FavoriteHotel, Hotel, Rating
 from schemas.hotel import HotelWithImagesAndAddress, HotelWithStats
 from dependencies import get_current_user
 
@@ -33,11 +34,29 @@ def remove_favorite(hotel_id: int, db: Session = Depends(get_db), user: dict = D
 
 
 @router.get("/", response_model=List[HotelWithStats])
-def get_favorites(db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
-    favorites = (
-        db.query(Hotel)
+def get_favorites(
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    query = (
+        db.query(
+            Hotel,
+            func.coalesce(func.avg(Rating.rating), 0).label("rating"),
+            func.coalesce(func.sum(Rating.views), 0).label("views")
+        )
         .join(FavoriteHotel, FavoriteHotel.hotel_id == Hotel.id)
+        .outerjoin(Rating, Rating.hotel_id == Hotel.id)
+        .options(joinedload(Hotel.images), joinedload(Hotel.address))
         .filter(FavoriteHotel.client_id == user["id"])
-        .all()
+        .group_by(Hotel.id)
     )
-    return favorites
+
+    results = []
+    for hotel, rating, views in query.all():
+        h = HotelWithStats.from_orm(hotel)
+        h.rating = rating
+        h.views = views
+        h.is_favorite = True  # якщо в схемі є
+        results.append(h)
+
+    return results
