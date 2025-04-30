@@ -53,10 +53,7 @@ def get_favorites(
 
     results = []
     for hotel, rating, views in query.all():
-        h = HotelWithStats.from_orm(hotel)
-        h.rating = rating
-        h.views = views
-        h.is_favorite = True  # якщо в схемі є
-        results.append(h)
+        hotel_schema = HotelWithImagesAndAddress.from_orm(hotel)
+        results.append(HotelWithStats(hotel=hotel_schema, rating=rating, views=views))
 
     return results
