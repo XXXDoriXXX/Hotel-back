@@ -195,3 +195,12 @@ class Rating(Base):
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
     client = relationship("Client", back_populates="ratings")
     hotel = relationship("Hotel", back_populates="ratings")
+class FavoriteHotel(Base):
+    __tablename__ = "favorite_hotels"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    client_id = Column(Integer, ForeignKey("clients.id", ondelete="CASCADE"), nullable=False)
+    hotel_id = Column(Integer, ForeignKey("hotels.id", ondelete="CASCADE"), nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+
+    client = relationship("Client", backref="favorite_hotels")
+    hotel = relationship("Hotel")

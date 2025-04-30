@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from crud.person_crud import verify_password, get_password_hash
 from dependencies import get_current_user
-from models import Client, Owner
+from models import Client, Owner, FavoriteHotel
 from database import get_db
 from schemas import ProfileUpdateRequest, ChangeCredentialsRequest
 from schemas.profile import PersonBase, OwnerUpdateRequest, UpdateOwnerResponse
@@ -148,12 +148,16 @@ def update_credentials(
     # ---------------- GET PROFILE ----------------
 @router.get("/", response_model=PersonBase)
 def get_profile(
-        db: Session = Depends(get_db),
-        current_user: dict = Depends(get_current_user)
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
 ):
     user = db.query(Client).filter(Client.id == current_user["id"]).first()
-
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    return user
+    favorite_ids = db.query(FavoriteHotel.hotel_id).filter_by(client_id=user.id).all()
+    favorite_hotel_ids = [f[0] for f in favorite_ids]
+
+    result = PersonBase.from_orm(user)
+    result.favorite_hotel_ids = favorite_hotel_ids
+    return result
