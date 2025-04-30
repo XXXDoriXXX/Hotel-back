@@ -60,6 +60,7 @@ class HotelWithImagesAndAddress(HotelBase):
     address: AddressBase
     amenities: List[AmenityHotelBase] = []
 
+
     class Config:
         from_attributes = True
 class HotelWithStats(BaseModel):
@@ -89,3 +90,10 @@ class HotelSearchParams(BaseModel):
     check_out: Optional[date] = None
     skip: int = 0
     limit: int = 25
+class FavoriteHotelBase(BaseModel):
+    id: int
+    hotel_id: int
+    client_id: int
+
+    class Config:
+        from_attributes = True

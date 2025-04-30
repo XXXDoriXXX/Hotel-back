@@ -1,7 +1,9 @@
 from datetime import datetime
 
 from pydantic import BaseModel, EmailStr, Field
-from typing import Optional
+from typing import Optional, List
+
+
 class ProfileUpdateRequest(BaseModel):
     first_name: Optional[str]
     last_name: Optional[str]
@@ -32,6 +34,7 @@ class PersonBase(BaseModel):
     phone: str
     birth_date: Optional[datetime] = None
     avatar_url: Optional[str] = None
+    favorite_hotel_ids: List[int] = []
     class Config:
         from_attributes = True
 class OwnerUpdateRequest(BaseModel):
