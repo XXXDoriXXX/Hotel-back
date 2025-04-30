@@ -4,7 +4,7 @@ from typing import List
 
 from database import get_db
 from models import FavoriteHotel, Hotel
-from schemas.hotel import HotelWithImagesAndAddress
+from schemas.hotel import HotelWithImagesAndAddress, HotelWithStats
 from dependencies import get_current_user
 
 router = APIRouter(prefix="/favorites", tags=["favorites"])
@@ -32,7 +32,7 @@ def remove_favorite(hotel_id: int, db: Session = Depends(get_db), user: dict = D
     return {"message": "Hotel removed from favorites"}
 
 
-@router.get("/", response_model=List[HotelWithImagesAndAddress])
+@router.get("/", response_model=List[HotelWithStats])
 def get_favorites(db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
     favorites = (
         db.query(Hotel)
