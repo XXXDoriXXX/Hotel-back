@@ -1,9 +1,9 @@
 from typing import List
-from sqlalchemy import func
+from sqlalchemy import func, case
 from starlette.responses import RedirectResponse
 import stripe
 import os
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, subqueryload
 from datetime import datetime
 from database import get_db
@@ -266,13 +266,19 @@ def manual_refund(
 
 @router.get("/redirect/booking-success")
 def redirect_to_app(booking_id: int):
-    return RedirectResponse(f"myapp://booking/success?booking_id={booking_id}")
-
-@router.get("/my", response_model=List[BookingHistoryItem])
+    return RedirectResponse(f"myapp://booking/success?booking_id={booking_id}")@router.get("/my", response_model=List[BookingHistoryItem])
 def get_my_bookings(
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user)
 ):
+    status_order = case(
+        (Booking.status == "confirmed", 1),
+        (Booking.status == "awaiting_confirmation", 2),
+        (Booking.status == "pending_payment", 3),
+        (Booking.status == "cancelled", 4),
+        else_=5
+    )
+
     bookings = (
         db.query(
             Booking.id.label("booking_id"),
@@ -283,12 +289,13 @@ def get_my_bookings(
             Hotel.name.label("hotel_name"),
             (Room.price_per_night * func.DATE_PART('day', Booking.date_end - Booking.date_start)).label("total_price"),
             Booking.status,
+            Booking.created_at,
             Hotel.id.label("hotel_id")
         )
         .join(Room, Booking.room_id == Room.id)
         .join(Hotel, Room.hotel_id == Hotel.id)
         .filter(Booking.client_id == user["id"])
-        .order_by(Booking.created_at.desc())
+        .order_by(status_order, Booking.created_at.desc())
         .all()
     )
 
@@ -305,6 +312,7 @@ def get_my_bookings(
             "hotel_name": booking.hotel_name,
             "total_price": booking.total_price,
             "status": booking.status,
+            "created_at": booking.created_at,
             "hotel_images": hotel_images
         })
 
