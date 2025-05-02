@@ -266,18 +266,28 @@ def manual_refund(
 
 @router.get("/redirect/booking-success")
 def redirect_to_app(booking_id: int):
-    return RedirectResponse(f"myapp://booking/success?booking_id={booking_id}")@router.get("/my", response_model=List[BookingHistoryItem])
+    return RedirectResponse(f"myapp://booking/success?booking_id={booking_id}")
+from fastapi import Query
+
+@router.get("/my", response_model=List[BookingHistoryItem])
 def get_my_bookings(
     db: Session = Depends(get_db),
-    user: dict = Depends(get_current_user)
+    user: dict = Depends(get_current_user),
+    sort_by: str = Query("created_at", regex="^(created_at|status)$"),
+    order: str = Query("desc", regex="^(asc|desc)$")
 ):
-    status_order = case(
-        (Booking.status == "confirmed", 1),
-        (Booking.status == "awaiting_confirmation", 2),
-        (Booking.status == "pending_payment", 3),
-        (Booking.status == "cancelled", 4),
-        else_=5
-    )
+    if sort_by == "status":
+        sort_column = case(
+            (Booking.status == "confirmed", 1),
+            (Booking.status == "pending_payment", 2),
+            (Booking.status == "awaiting_confirmation", 3),
+            (Booking.status == "cancelled", 4),
+            else_=5
+        )
+    else:  # created_at
+        sort_column = Booking.created_at
+
+    order_func = sort_column.asc() if order == "asc" else sort_column.desc()
 
     bookings = (
         db.query(
@@ -295,14 +305,13 @@ def get_my_bookings(
         .join(Room, Booking.room_id == Room.id)
         .join(Hotel, Room.hotel_id == Hotel.id)
         .filter(Booking.client_id == user["id"])
-        .order_by(status_order, Booking.created_at.desc())
+        .order_by(order_func)
         .all()
     )
 
     result = []
     for booking in bookings:
         hotel_images = db.query(HotelImg).filter(HotelImg.hotel_id == booking.hotel_id).all()
-
         result.append({
             "booking_id": booking.booking_id,
             "room_id": booking.room_id,
