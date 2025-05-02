@@ -25,6 +25,6 @@ class BookingHistoryItem(BaseModel):
     total_price: float
     status: str
     hotel_images: List[HotelImgBase]
-
+    created_at: datetime
     class Config:
         from_attributes = True
