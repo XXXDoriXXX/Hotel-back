@@ -31,3 +31,23 @@ def auto_complete_bookings():
 
     db.commit()
     db.close()
+def cancel_stale_card_bookings():
+    db: Session = SessionLocal()
+    now = datetime.utcnow()
+
+    expired = db.query(Booking).filter(
+        Booking.status == BookingStatus.pending_payment,
+        Booking.created_at < now - timedelta(minutes=10)
+    ).all()
+
+    for b in expired:
+        b.status = BookingStatus.cancelled
+        for p in b.payments:
+            if p.is_card:
+                p.status = PaymentStatus.failed
+
+    if expired:
+        print(f"[tasks] Cancelled stale card bookings: {len(expired)}")
+
+    db.commit()
+    db.close()
