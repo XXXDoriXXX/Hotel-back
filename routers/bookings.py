@@ -284,7 +284,7 @@ def get_my_bookings(
             (Booking.status == "cancelled", 4),
             else_=5
         )
-    else:  # created_at
+    else:
         sort_column = Booking.created_at
 
     order_func = sort_column.asc() if order == "asc" else sort_column.desc()
@@ -304,7 +304,10 @@ def get_my_bookings(
         )
         .join(Room, Booking.room_id == Room.id)
         .join(Hotel, Room.hotel_id == Hotel.id)
-        .filter(Booking.client_id == user["id"])
+        .filter(
+            Booking.client_id == user["id"],
+            Booking.is_archived == False
+        )
         .order_by(order_func)
         .all()
     )
@@ -326,3 +329,41 @@ def get_my_bookings(
         })
 
     return result
+@router.delete("/{booking_id}")
+def delete_booking(
+    booking_id: int,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    booking = db.query(Booking).filter(Booking.id == booking_id).first()
+    if not booking:
+        raise HTTPException(404, "Booking not found")
+
+    if booking.client_id != user["id"]:
+        raise HTTPException(403, "You can delete only your own bookings")
+
+    if booking.status != "cancelled":
+        raise HTTPException(400, "Only cancelled bookings can be deleted")
+
+    db.delete(booking)
+    db.commit()
+    return {"message": "Booking permanently deleted"}
+@router.post("/{booking_id}/archive")
+def archive_booking(
+    booking_id: int,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    booking = db.query(Booking).filter(Booking.id == booking_id).first()
+    if not booking:
+        raise HTTPException(404, "Booking not found")
+
+    if booking.client_id != user["id"]:
+        raise HTTPException(403, "You can archive only your own bookings")
+
+    if booking.status != "completed":
+        raise HTTPException(400, "Only completed bookings can be archived")
+
+    booking.is_archived = True
+    db.commit()
+    return {"message": "Booking archived"}

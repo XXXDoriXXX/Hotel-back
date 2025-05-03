@@ -153,6 +153,7 @@ class Booking(Base):
     date_start = Column(DateTime, nullable=False)
     date_end = Column(DateTime, nullable=False)
     status = Column(Enum(BookingStatus), default='pending', nullable=False)
+    is_archived = Column(Boolean, default=False)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
     client = relationship("Client", back_populates="bookings")
@@ -163,7 +164,7 @@ class Payment(Base):
     __tablename__ = 'payments'
     id = Column(Integer, primary_key=True, autoincrement=True)
     amount = Column(Float, nullable=False)
-    booking_id = Column(Integer, ForeignKey('bookings.id', ondelete='CASCADE'), nullable=False)
+    booking_id = Column(Integer, ForeignKey("bookings.id", ondelete="SET NULL"), nullable=True)
     currency = Column(String(3), default='USD', nullable=False)
     status = Column(Enum(PaymentStatus), default='pending', nullable=False)
     is_card = Column(Boolean, default=True)
