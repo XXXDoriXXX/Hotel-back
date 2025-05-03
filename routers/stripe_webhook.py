@@ -3,7 +3,7 @@ import os
 from fastapi import APIRouter, Request, Depends, HTTPException
 from sqlalchemy.orm import Session
 from database import get_db
-from models import Booking, Payment, PaymentError
+from models import Booking, Payment, PaymentError, BookingStatus, PaymentStatus
 from datetime import datetime
 
 router = APIRouter(prefix="/stripe", tags=["stripe"])
@@ -32,15 +32,16 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         if not booking:
             return {"status": "ok, booking not found"}
 
-        if booking.status != "pending_payment":
+        if booking.status != BookingStatus.pending_payment:
             return {"status": "ok, booking is not pending payment"}
 
-        payment = db.query(Payment).filter(Payment.booking_id == booking.id).first()
+        payment = db.query(Payment).filter(Payment.booking_id == booking.id, Payment.is_card == True).first()
+
         if not payment:
             return {"status": "ok, payment not found"}
 
-        booking.status = "confirmed"
-        payment.status = "paid"
+        booking.status = BookingStatus.confirmed
+        payment.status = PaymentStatus.paid
         payment.stripe_payment_id = session["payment_intent"]
         payment.paid_at = datetime.utcnow()
 
@@ -60,7 +61,7 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
                     error_code="payment_failed",
                     error_message="Payment failed via Stripe"
                 ))
-                payment.status = "failed"
+                payment.status = PaymentStatus.failed
                 db.commit()
 
         return {"status": "fail logged"}
