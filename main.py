@@ -1,4 +1,6 @@
 import os
+from datetime import datetime
+
 from fastapi import FastAPI
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
@@ -7,6 +9,9 @@ from routers import (
     auth, hotels, rooms, profile, amenities, stripe_webhook, payments, bookings, favorite
 )
 from fastapi.middleware.cors import CORSMiddleware
+
+from tasks import auto_complete_bookings
+from apscheduler.schedulers.background import BackgroundScheduler
 
 app = FastAPI(
     title="Hotel Booking API",
@@ -43,7 +48,14 @@ routers = [
 
 for router in routers:
     app.include_router(router)
-
+scheduler = BackgroundScheduler()
+scheduler.add_job(
+    auto_complete_bookings,
+    trigger="interval",
+    hours=12,
+    next_run_time=datetime.utcnow()
+)
+scheduler.start()
 @app.get("/", tags=["Root"])
 async def read_root():
     return {
