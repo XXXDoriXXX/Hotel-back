@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, subqueryload
 from datetime import datetime
 from database import get_db
-from models import Room, Owner, Booking, Payment, Client, PaymentError, Hotel, HotelImg, PaymentStatus
+from models import Room, Owner, Booking, Payment, Client, PaymentError, Hotel, HotelImg, PaymentStatus, BookingStatus
 from dependencies import get_current_user, get_current_owner
 from schemas.booking import BookingCheckoutRequest, RefundRequest, ManualRefundRequest, BookingHistoryItem
 
@@ -189,10 +189,10 @@ def request_refund(
         raise HTTPException(400, "Payment not found")
 
     if not payment.is_card:
-        db.delete(payment)
-        db.delete(booking)
+        booking.status = BookingStatus.cancelled
+        payment.status = PaymentStatus.failed
         db.commit()
-        return {"message": "Cash booking deleted successfully"}
+        return {"message": "Cash booking marked as cancelled"}
 
     now = datetime.utcnow()
     if (booking.date_start - now).total_seconds() < 86400:
