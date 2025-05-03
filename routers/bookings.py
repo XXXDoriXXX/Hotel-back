@@ -342,7 +342,7 @@ def delete_booking(
     if booking.client_id != user["id"]:
         raise HTTPException(403, "You can delete only your own bookings")
 
-    if booking.status != "cancelled":
+    if booking.status != BookingStatus.cancelled:
         raise HTTPException(400, "Only cancelled bookings can be deleted")
 
     db.delete(booking)
@@ -361,7 +361,7 @@ def archive_booking(
     if booking.client_id != user["id"]:
         raise HTTPException(403, "You can archive only your own bookings")
 
-    if booking.status != "completed":
+    if booking.status != BookingStatus.completed:
         raise HTTPException(400, "Only completed bookings can be archived")
 
     booking.is_archived = True
