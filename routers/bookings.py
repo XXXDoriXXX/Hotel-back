@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, subqueryload
 from datetime import datetime
 from database import get_db
-from models import Room, Owner, Booking, Payment, Client, PaymentError, Hotel, HotelImg
+from models import Room, Owner, Booking, Payment, Client, PaymentError, Hotel, HotelImg, PaymentStatus
 from dependencies import get_current_user, get_current_owner
 from schemas.booking import BookingCheckoutRequest, RefundRequest, ManualRefundRequest, BookingHistoryItem
 
@@ -198,7 +198,7 @@ def request_refund(
     if (booking.date_start - now).total_seconds() < 86400:
         raise HTTPException(400, "Cannot refund within 24 hours of check-in")
 
-    if payment.status != "paid":
+    if payment.status != PaymentStatus.paid:
         raise HTTPException(400, "No paid payment found")
 
     days_left = (booking.date_start - now).days
