@@ -94,7 +94,13 @@ def create_checkout_session(
                 "quantity": 1,
             }],
             mode="payment",
-            success_url=f"{DOMAIN}/bookings/redirect/booking-success?booking_id={booking.id}",
+            success_url=(
+                f"{DOMAIN}/bookings/redirect/booking-success?"
+                f"booking_id={booking.id}"
+                f"&total_price={room.price_per_night * nights:.2f}"
+                f"&booking_date={datetime.utcnow().date()}"
+            ),
+
             cancel_url=f"{DOMAIN}/booking/cancel",
             payment_intent_data={
                 "application_fee_amount": int(total_price * PLATFORM_FEE_PERCENT),
@@ -265,9 +271,15 @@ def manual_refund(
         raise HTTPException(500, "Manual refund failed")
 
 @router.get("/redirect/booking-success")
-def redirect_to_app(booking_id: int):
-    return RedirectResponse(f"myapp://booking/success?booking_id={booking_id}")
-from fastapi import Query
+def redirect_to_app(booking_id: int, total_price: float, booking_date: str):
+    return RedirectResponse(
+        f"myapp://booking/success"
+        f"?booking_id={booking_id}"
+        f"&total_price={total_price:.2f}"
+        f"&booking_date={booking_date}"
+    )
+
+
 
 @router.get("/my", response_model=List[BookingHistoryItem])
 def get_my_bookings(
