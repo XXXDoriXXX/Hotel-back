@@ -380,20 +380,23 @@ def search_hotels(
     filters: HotelSearchParams,
     db: Session = Depends(get_db)
 ):
+    def normalize(text: str) -> str:
+        return text.strip().lower()
+
     query = _base_stats_query(db)
 
-    if getattr(filters, 'name', None):
-        query = query.filter(Hotel.name.ilike(f"{filters.name}%"))
-    if getattr(filters, 'description', None):
-        query = query.filter(Hotel.description.ilike(f"%{filters.description}%"))
-    if getattr(filters, 'city', None):
-        query = query.filter(Address.city.ilike(f"{filters.city}%"))
-    if getattr(filters, 'country', None):
-        query = query.filter(Address.country.ilike(f"{filters.country}%"))
-    if getattr(filters, 'state', None):
-        query = query.filter(Address.state.ilike(f"{filters.state}%"))
-    if getattr(filters, 'postal_code', None):
-        query = query.filter(Address.postal_code.ilike(f"{filters.postal_code}%"))
+    if filters.name:
+        query = query.filter(func.lower(Hotel.name).like(f"%{normalize(filters.name)}%"))
+    if filters.description:
+        query = query.filter(func.lower(Hotel.description).like(f"%{normalize(filters.description)}%"))
+    if filters.city:
+        query = query.filter(func.lower(Address.city).like(f"%{normalize(filters.city)}%"))
+    if filters.state:
+        query = query.filter(func.lower(Address.state).like(f"%{normalize(filters.state)}%"))
+    if filters.country:
+        query = query.filter(func.lower(Address.country).like(f"%{normalize(filters.country)}%"))
+    if filters.postal_code:
+        query = query.filter(func.lower(Address.postal_code).like(f"%{normalize(filters.postal_code)}%"))
 
     if filters.min_price is not None:
         query = query.filter(Room.price_per_night >= filters.min_price)
@@ -405,10 +408,14 @@ def search_hotels(
 
     if filters.room_type:
         query = query.filter(Room.room_type == filters.room_type)
+
     if filters.amenity_ids:
         query = query.join(AmenityHotel).filter(AmenityHotel.amenity_id.in_(filters.amenity_ids))
 
     if filters.check_in and filters.check_out:
+        if filters.check_in >= filters.check_out:
+            raise HTTPException(400, detail="check_in must be before check_out")
+
         subq = (
             db.query(Booking.room_id)
             .filter(
@@ -428,10 +435,10 @@ def search_hotels(
     sort_field = sort_map.get(filters.sort_by, func.avg(Rating.rating))
     query = query.order_by(sort_field.desc() if filters.sort_dir == "desc" else sort_field.asc())
 
-    query = query.offset(filters.skip).limit(filters.limit)
+    results = query.offset(filters.skip).limit(filters.limit).all()
 
-    results = query.all()
     return [HotelWithStats(hotel=h, rating=float(r), views=int(v)) for h, r, v in results]
+
 # ---------------- GET HOTEL BY ID ----------------
 @router.get("/{hotel_id}", response_model=HotelWithStats)
 def get_hotel(
