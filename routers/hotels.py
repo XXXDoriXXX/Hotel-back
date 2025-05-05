@@ -444,7 +444,8 @@ def get_hotel(
         .options(
             joinedload(Hotel.images),
             joinedload(Hotel.amenities),
-            joinedload(Hotel.address)
+            joinedload(Hotel.address),
+            joinedload(Hotel.owner)
         )
         .filter(Hotel.id == hotel_id)
         .first()
@@ -464,6 +465,9 @@ def get_hotel(
         .scalar()
     )
 
+    hotel_with_flag = HotelWithImagesAndAddress.from_orm(hotel)
+    hotel_with_flag.is_card_available = bool(hotel.owner.stripe_account_id)
+
     if not current_user.get("is_owner"):
         user_rating = (
             db.query(Rating)
@@ -482,7 +486,7 @@ def get_hotel(
         db.commit()
 
     return {
-        "hotel": hotel,
+        "hotel": hotel_with_flag,
         "rating": float(rating),
         "views": int(views)
     }

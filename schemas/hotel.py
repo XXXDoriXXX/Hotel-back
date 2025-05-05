@@ -48,21 +48,17 @@ class HotelImgBase(BaseModel):
     id: int
     hotel_id: int
     image_url: str
-
     class Config:
         from_attributes = True
-
-
-
 
 class HotelWithImagesAndAddress(HotelBase):
     images: list[HotelImgBase] = []
     address: AddressBase
+    is_card_available: bool = False
     amenities: List[AmenityHotelBase] = []
-
-
     class Config:
         from_attributes = True
+
 class HotelWithStats(BaseModel):
     hotel: HotelWithImagesAndAddress
     rating: float
