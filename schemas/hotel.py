@@ -71,21 +71,35 @@ class HotelWithAmenities(HotelBase):
 class HotelWithAll(HotelBase):
     images: List[HotelImgBase] = []
     amenities: List[AmenityHotelBase] = []
+from pydantic import BaseModel, Field
+from typing import Optional, List
+from datetime import date
+from models import RoomType
+
 class HotelSearchParams(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
     city: Optional[str] = None
+    state: Optional[str] = None
     country: Optional[str] = None
+    postal_code: Optional[str] = None
+
     min_price: Optional[float] = None
     max_price: Optional[float] = None
     min_rating: Optional[float] = None
+
     room_type: Optional[RoomType] = None
     amenity_ids: Optional[List[int]] = None
     has_free_rooms: Optional[bool] = False
-    sort_by: Optional[str] = Field("rating", pattern="^(price|rating|views)$")
-    sort_dir: Optional[str] = Field("desc", pattern="^(asc|desc)$")
+
     check_in: Optional[date] = None
     check_out: Optional[date] = None
+
+    sort_by: Optional[str] = Field("rating", pattern="^(price|rating|views)$")
+    sort_dir: Optional[str] = Field("desc", pattern="^(asc|desc)$")
     skip: int = 0
     limit: int = 25
+
 class FavoriteHotelBase(BaseModel):
     id: int
     hotel_id: int
