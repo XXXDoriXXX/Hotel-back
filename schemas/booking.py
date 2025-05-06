@@ -1,7 +1,7 @@
 from typing import Optional, List
 
 from pydantic import BaseModel
-from datetime import datetime
+from datetime import datetime, date
 
 from schemas import HotelImgBase
 
@@ -28,3 +28,32 @@ class BookingHistoryItem(BaseModel):
     created_at: datetime
     class Config:
         from_attributes = True
+class ClientOut(BaseModel):
+    id: int
+    first_name: str
+    last_name: str
+    email: str
+
+    class Config:
+        orm_mode = True
+
+class PaymentOut(BaseModel):
+    id: int
+    amount: float
+    is_card: bool
+    status: str
+
+    class Config:
+        orm_mode = True
+
+class BookingOut(BaseModel):
+    id: int
+    status: str
+    date_start: date
+    date_end: date
+    room_id: int
+    client: ClientOut
+    payment: Optional[PaymentOut]
+
+    class Config:
+        orm_mode = True

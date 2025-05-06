@@ -10,6 +10,7 @@ from database import get_db
 from dependencies import get_current_owner, get_current_user
 from models import Hotel, HotelImg, Address, Room, Booking, Owner, Payment, AmenityHotel, Rating, BookingStatus, \
     FavoriteHotel, Client
+from schemas.booking import BookingOut
 from schemas.hotel import HotelCreate, HotelBase, HotelImgBase, HotelWithImagesAndAddress, HotelWithStats, \
     HotelSearchParams
 
@@ -173,7 +174,7 @@ def delete_image(image_id: int, db: Session = Depends(get_db), current_owner = D
     return {"message": "Image deleted"}
 
 
-@router.get("/{hotel_id}/bookings")
+@router.get("/{hotel_id}/bookings", response_model=List[BookingOut])
 def get_hotel_bookings(
     hotel_id: int,
     skip: int = Query(0, ge=0),
@@ -185,10 +186,21 @@ def get_hotel_bookings(
     if not hotel or hotel.owner_id != current_owner.id:
         raise HTTPException(403, "Not authorized")
 
-    bookings = db.query(Booking).join(Room).filter(Room.hotel_id == hotel_id).order_by(Booking.created_at.desc()).offset(skip).limit(limit).all()
+    bookings = (
+        db.query(Booking)
+        .join(Room)
+        .filter(Room.hotel_id == hotel_id)
+        .order_by(Booking.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+        .options(
+            joinedload(Booking.client),
+            joinedload(Booking.payment)
+        )
+        .all()
+    )
 
     return bookings
-
 
 @router.get("/{hotel_id}/stats/full")
 def get_advanced_hotel_stats(
