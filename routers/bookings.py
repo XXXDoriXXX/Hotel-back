@@ -134,7 +134,7 @@ def confirm_cash_booking(
     if booking.room.hotel.owner_id != owner.id:
         raise HTTPException(403, "You can confirm only your own hotel's bookings")
 
-    if booking.status != "awaiting_confirmation":
+    if booking.status != BookingStatus.awaiting_confirmation:
         raise HTTPException(400, "Only awaiting confirmation bookings can be confirmed")
 
     payment = db.query(Payment).filter(Payment.booking_id == booking_id).first()
@@ -142,8 +142,8 @@ def confirm_cash_booking(
     if not payment or payment.is_card:
         raise HTTPException(400, "Payment is not cash or not found")
 
-    booking.status = "confirmed"
-    payment.status = "paid"
+    booking.status = BookingStatus.confirmed
+    payment.status = PaymentStatus.paid
     payment.paid_at = datetime.utcnow()
     db.commit()
 
@@ -163,7 +163,7 @@ def cancel_cash_booking(
     if booking.room.hotel.owner_id != owner.id:
         raise HTTPException(403, "You can cancel only your own hotel's bookings")
 
-    if booking.status != "awaiting_confirmation":
+    if booking.status != BookingStatus.awaiting_confirmation:
         raise HTTPException(400, "Only awaiting confirmation bookings can be cancelled")
 
     payment = db.query(Payment).filter(Payment.booking_id == booking_id).first()
@@ -171,8 +171,8 @@ def cancel_cash_booking(
     if not payment or payment.is_card:
         raise HTTPException(400, "Payment is not cash or not found")
 
-    booking.status = "cancelled"
-    payment.status = "cancelled"
+    booking.status = BookingStatus.cancelled
+    payment.status = PaymentStatus.failed
     db.commit()
 
     return {"message": "Cash booking cancelled"}
