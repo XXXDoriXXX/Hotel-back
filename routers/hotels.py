@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from sqlite3 import Date
+from sqlalchemy import Date
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status, Body, Query
 from sqlalchemy import func, extract, case, cast
