@@ -30,6 +30,7 @@ class BookingHistoryItem(BaseModel):
         from_attributes = True
 
 class BookingItem(BaseModel):
+    booking_id: int
     room_number: int
     client_name: str
     email: str
