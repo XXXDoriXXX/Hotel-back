@@ -205,6 +205,7 @@ def get_formatted_bookings(
     for b in bookings:
         first_payment = b.payments[0] if b.payments else None
         result.append({
+            "booking_id": b.id,
             "room_number": b.room.room_number,
             "client_name": f"{b.client.first_name} {b.client.last_name}",
             "email": b.client.email,
