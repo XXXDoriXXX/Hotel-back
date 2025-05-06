@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status, Body
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status, Body, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 from typing import List, Optional
