@@ -10,7 +10,7 @@ from database import get_db
 from dependencies import get_current_owner, get_current_user
 from models import Hotel, HotelImg, Address, Room, Booking, Owner, Payment, AmenityHotel, Rating, BookingStatus, \
     FavoriteHotel, Client
-from schemas.booking import BookingOut
+from schemas.booking import BookingItem
 from schemas.hotel import HotelCreate, HotelBase, HotelImgBase, HotelWithImagesAndAddress, HotelWithStats, \
     HotelSearchParams
 
@@ -174,8 +174,8 @@ def delete_image(image_id: int, db: Session = Depends(get_db), current_owner = D
     return {"message": "Image deleted"}
 
 
-@router.get("/{hotel_id}/bookings", response_model=List[BookingOut])
-def get_hotel_bookings(
+@router.get("/{hotel_id}/bookings", response_model=List[BookingItem])
+def get_formatted_bookings(
     hotel_id: int,
     skip: int = Query(0, ge=0),
     limit: int = Query(25, le=100),
@@ -189,18 +189,34 @@ def get_hotel_bookings(
     bookings = (
         db.query(Booking)
         .join(Room)
+        .options(
+            joinedload(Booking.client),
+            joinedload(Booking.room),
+            joinedload(Booking.payments)
+        )
         .filter(Room.hotel_id == hotel_id)
         .order_by(Booking.created_at.desc())
         .offset(skip)
         .limit(limit)
-        .options(
-            joinedload(Booking.client),
-            joinedload(Booking.payments)
-        )
         .all()
     )
 
-    return bookings
+    result = []
+    for b in bookings:
+        first_payment = b.payments[0] if b.payments else None
+        result.append({
+            "room_number": b.room.number,
+            "client_name": f"{b.client.first_name} {b.client.last_name}",
+            "email": b.client.email,
+            "phone": b.client.phone,
+            "is_card": first_payment.is_card if first_payment else None,
+            "amount": first_payment.amount if first_payment else None,
+            "period_start": b.date_start,
+            "period_end": b.date_end,
+            "status": b.status
+        })
+
+    return result
 @router.get("/{hotel_id}/stats/full")
 def get_advanced_hotel_stats(
     hotel_id: int,
