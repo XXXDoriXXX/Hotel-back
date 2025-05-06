@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status, Body
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status, Body, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 from typing import List, Optional
@@ -171,43 +171,83 @@ def delete_image(image_id: int, db: Session = Depends(get_db), current_owner = D
     return {"message": "Image deleted"}
 
 
-@router.get("/{hotel_id}/stats")
-def get_hotel_stats(
-        hotel_id: int,
-        db: Session = Depends(get_db),
-        current_owner: Owner = Depends(get_current_owner)
+@router.get("/{hotel_id}/bookings")
+def get_hotel_bookings(
+    hotel_id: int,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(25, le=100),
+    db: Session = Depends(get_db),
+    current_owner = Depends(get_current_owner)
 ):
     hotel = db.query(Hotel).filter(Hotel.id == hotel_id).first()
     if not hotel or hotel.owner_id != current_owner.id:
         raise HTTPException(403, "Not authorized")
 
-    room_count = db.query(Room).filter(Room.hotel_id == hotel_id).count()
+    bookings = db.query(Booking).join(Room).filter(Room.hotel_id == hotel_id).order_by(Booking.created_at.desc()).offset(skip).limit(limit).all()
 
+    return bookings
+
+@router.get("/{hotel_id}/stats/full")
+def get_detailed_hotel_stats(
+    hotel_id: int,
+    db: Session = Depends(get_db),
+    current_owner = Depends(get_current_owner)
+):
+    hotel = db.query(Hotel).filter(Hotel.id == hotel_id).first()
+    if not hotel or hotel.owner_id != current_owner.id:
+        raise HTTPException(403, "Not authorized")
+
+    now = datetime.now()
+
+    room_count = db.query(Room).filter(Room.hotel_id == hotel_id).count()
     booking_count = db.query(Booking).filter(
         Booking.status == "confirmed",
         Booking.room.has(Room.hotel_id == hotel_id),
-        Booking.date_end >= datetime.now()
+        Booking.date_end >= now
     ).count()
 
-    income = db.query(func.sum(Payment.amount)).join(
-        Payment.booking
-    ).join(
-        Booking.room
-    ).filter(
+    income = db.query(func.sum(Payment.amount)).join(Payment.booking).join(Booking.room).filter(
         Payment.status == "paid",
         Room.hotel_id == hotel_id
     ).scalar() or 0
 
-    total_rooms = room_count
-    booked_rooms = booking_count
+    occupancy = booking_count / room_count if room_count > 0 else 0
 
-    occupancy = booked_rooms / total_rooms if total_rooms > 0 else 0
+    avg_rating = db.query(func.avg(Rating.rating)).filter(Rating.hotel_id == hotel_id).scalar() or 0
+    total_views = db.query(func.sum(Rating.views)).filter(Rating.hotel_id == hotel_id).scalar() or 0
+
+    total_clients = db.query(func.count(func.distinct(Booking.client_id))).join(Room).filter(
+        Room.hotel_id == hotel_id
+    ).scalar()
+
+    refunds = db.query(func.sum(Payment.amount)).join(Payment.booking).join(Booking.room).filter(
+        Payment.status == "refunded",
+        Room.hotel_id == hotel_id
+    ).scalar() or 0
+
+    favorite_count = db.query(FavoriteHotel).filter(FavoriteHotel.hotel_id == hotel_id).count()
+
+    monthly_income = db.query(
+        extract("month", Payment.paid_at).label("month"),
+        func.sum(Payment.amount)
+    ).join(Payment.booking).join(Booking.room).filter(
+        Payment.status == "paid",
+        Room.hotel_id == hotel_id
+    ).group_by("month").all()
 
     return {
         "rooms": room_count,
         "bookings": booking_count,
         "income": income,
-        "occupancy": round(occupancy, 2)
+        "occupancy": round(occupancy, 2),
+        "average_rating": round(avg_rating, 2),
+        "total_views": total_views,
+        "unique_clients": total_clients,
+        "refunds": refunds,
+        "favorites": favorite_count,
+        "monthly_income": [
+            {"month": int(month), "total": float(total)} for month, total in monthly_income
+        ]
     }
 def build_base_query(db: Session, order_field, join_room=False):
     query = (
