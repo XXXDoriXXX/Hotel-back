@@ -1,14 +1,16 @@
+from _pydatetime import timedelta
 from datetime import datetime
+from sqlite3 import Date
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status, Body, Query
-from sqlalchemy import func, extract
+from sqlalchemy import func, extract, case, cast
 from sqlalchemy.orm import Session, joinedload
 from typing import List, Optional
 import os, uuid, boto3
 from database import get_db
 from dependencies import get_current_owner, get_current_user
 from models import Hotel, HotelImg, Address, Room, Booking, Owner, Payment, AmenityHotel, Rating, BookingStatus, \
-    FavoriteHotel
+    FavoriteHotel, Client
 from schemas.hotel import HotelCreate, HotelBase, HotelImgBase, HotelWithImagesAndAddress, HotelWithStats, \
     HotelSearchParams
 
@@ -188,68 +190,132 @@ def get_hotel_bookings(
 
     return bookings
 
+
 @router.get("/{hotel_id}/stats/full")
-def get_detailed_hotel_stats(
+def get_advanced_hotel_stats(
     hotel_id: int,
     db: Session = Depends(get_db),
     current_owner = Depends(get_current_owner)
 ):
-    hotel = db.query(Hotel).filter(Hotel.id == hotel_id).first()
-    if not hotel or hotel.owner_id != current_owner.id:
+    now = datetime.utcnow()
+    week_ago = now - timedelta(days=7)
+
+    hotel = db.query(Hotel).filter(Hotel.id == hotel_id, Hotel.owner_id == current_owner.id).first()
+    if not hotel:
         raise HTTPException(403, "Not authorized")
 
-    now = datetime.now()
+    total_rooms_q = db.query(func.count(Room.id)).filter(Room.hotel_id == hotel_id)
 
-    room_count = db.query(Room).filter(Room.hotel_id == hotel_id).count()
-    booking_count = db.query(Booking).filter(
-        Booking.status == "confirmed",
-        Booking.room.has(Room.hotel_id == hotel_id),
-        Booking.date_end >= now
-    ).count()
+    booking_stats_q = db.query(
+        func.count(Booking.id),
+        func.count(case((Booking.status == 'confirmed', 1))),
+        func.count(case((Booking.status == 'completed', 1))),
+        func.count(case((Booking.status == 'cancelled', 1)))
+    ).join(Room).filter(Room.hotel_id == hotel_id)
 
-    income = db.query(func.sum(Payment.amount)).join(Payment.booking).join(Booking.room).filter(
-        Payment.status == "paid",
-        Room.hotel_id == hotel_id
-    ).scalar() or 0
+    price_stats_q = db.query(
+        func.sum(Payment.amount),
+        func.sum(case((Payment.is_card == True, Payment.amount))),
+        func.sum(case((Payment.is_card == False, Payment.amount))),
+        func.sum(case((Payment.status == 'refunded', Payment.amount))),
+        func.avg(Payment.amount),
+        func.max(Payment.amount),
+        func.min(Payment.amount)
+    ).join(Payment.booking).join(Booking.room).filter(
+        Room.hotel_id == hotel_id, Payment.status == 'paid'
+    )
 
-    occupancy = booking_count / room_count if room_count > 0 else 0
-
-    avg_rating = db.query(func.avg(Rating.rating)).filter(Rating.hotel_id == hotel_id).scalar() or 0
-    total_views = db.query(func.sum(Rating.views)).filter(Rating.hotel_id == hotel_id).scalar() or 0
-
-    total_clients = db.query(func.count(func.distinct(Booking.client_id))).join(Room).filter(
-        Room.hotel_id == hotel_id
-    ).scalar()
-
-    refunds = db.query(func.sum(Payment.amount)).join(Payment.booking).join(Booking.room).filter(
-        Payment.status == "refunded",
-        Room.hotel_id == hotel_id
-    ).scalar() or 0
-
-    favorite_count = db.query(FavoriteHotel).filter(FavoriteHotel.hotel_id == hotel_id).count()
-
-    monthly_income = db.query(
-        extract("month", Payment.paid_at).label("month"),
+    daily_income_q = db.query(
+        cast(Payment.paid_at, Date),
         func.sum(Payment.amount)
     ).join(Payment.booking).join(Booking.room).filter(
-        Payment.status == "paid",
-        Room.hotel_id == hotel_id
-    ).group_by("month").all()
+        Room.hotel_id == hotel_id, Payment.status == 'paid'
+    ).group_by(cast(Payment.paid_at, Date)).order_by(cast(Payment.paid_at, Date))
+
+    weekly_bookings_q = db.query(
+        extract("week", Booking.created_at),
+        func.count()
+    ).join(Room).filter(Room.hotel_id == hotel_id).group_by(extract("week", Booking.created_at))
+
+    room_type_q = db.query(Room.room_type, func.count()).filter(Room.hotel_id == hotel_id).group_by(Room.room_type)
+
+    payment_dist_q = db.query(Payment.is_card, func.count()).join(Payment.booking).join(Booking.room).filter(
+        Room.hotel_id == hotel_id, Payment.status == 'paid'
+    ).group_by(Payment.is_card)
+
+    unique_clients_q = db.query(func.count(func.distinct(Booking.client_id))).join(Room).filter(Room.hotel_id == hotel_id)
+
+    top_clients_q = db.query(
+        Client.id,
+        Client.first_name,
+        Client.last_name,
+        func.sum(Payment.amount)
+    ).join(Booking, Client.id == Booking.client_id).join(Payment, Payment.booking_id == Booking.id).join(Room, Booking.room_id == Room.id).filter(
+        Room.hotel_id == hotel_id, Payment.status == 'paid'
+    ).group_by(Client.id).order_by(func.sum(Payment.amount).desc()).limit(10)
+
+    rating_views_q = db.query(
+        func.avg(Rating.rating),
+        func.sum(Rating.views)
+    ).filter(Rating.hotel_id == hotel_id)
+
+    favorites_q = db.query(func.count()).filter(FavoriteHotel.hotel_id == hotel_id)
+
+    total_rooms = total_rooms_q.scalar()
+    bookings_total, bookings_confirmed, bookings_completed, bookings_cancelled = booking_stats_q.one()
+    income_total, income_card, income_cash, refunds, avg_price, max_price, min_price = price_stats_q.one()
+    daily_income = daily_income_q.all()
+    weekly_bookings = weekly_bookings_q.all()
+    room_type_stats = room_type_q.all()
+    payment_dist = payment_dist_q.all()
+    unique_clients = unique_clients_q.scalar()
+    top_clients = top_clients_q.all()
+    rating_avg, total_views = rating_views_q.one()
+    favorites = favorites_q.scalar()
 
     return {
-        "rooms": room_count,
-        "bookings": booking_count,
-        "income": income,
-        "occupancy": round(occupancy, 2),
-        "average_rating": round(avg_rating, 2),
-        "total_views": total_views,
-        "unique_clients": total_clients,
-        "refunds": refunds,
-        "favorites": favorite_count,
-        "monthly_income": [
-            {"month": int(month), "total": float(total)} for month, total in monthly_income
-        ]
+        "general": {
+            "total_rooms": total_rooms,
+            "total_bookings": bookings_total,
+            "active_bookings": bookings_confirmed,
+            "completed_bookings": bookings_completed,
+            "cancelled_bookings": bookings_cancelled,
+            "occupancy": round(bookings_confirmed / total_rooms, 2) if total_rooms else 0
+        },
+        "financials": {
+            "income_total": income_total or 0,
+            "income_card": income_card or 0,
+            "income_cash": income_cash or 0,
+            "refunds": refunds or 0,
+            "avg_booking_price": round(avg_price or 0, 2),
+            "max_booking_price": max_price or 0,
+            "min_booking_price": min_price or 0
+        },
+        "dynamics": {
+            "daily_income": [{"date": d.isoformat(), "total": float(t)} for d, t in daily_income],
+            "weekly_bookings": [{"week": int(w), "count": int(c)} for w, c in weekly_bookings],
+            "room_type_popularity": [{"type": rt.value, "count": c} for rt, c in room_type_stats],
+            "payment_distribution": {
+                "card": next((c for i, c in payment_dist if i), 0),
+                "cash": next((c for i, c in payment_dist if not i), 0)
+            }
+        },
+        "clients": {
+            "unique": unique_clients,
+            "top": [
+                {"id": cid, "name": f"{first} {last}", "total_spent": float(spent)}
+                for cid, first, last, spent in top_clients
+            ]
+        },
+        "engagement": {
+            "average_rating": round(rating_avg or 0, 2),
+            "total_views": total_views or 0,
+            "favorites": favorites
+        }
     }
+
+
+
 def build_base_query(db: Session, order_field, join_room=False):
     query = (
         db.query(
