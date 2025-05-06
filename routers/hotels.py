@@ -195,13 +195,12 @@ def get_hotel_bookings(
         .limit(limit)
         .options(
             joinedload(Booking.client),
-            joinedload(Booking.payment)
+            joinedload(Booking.payments)
         )
         .all()
     )
 
     return bookings
-
 @router.get("/{hotel_id}/stats/full")
 def get_advanced_hotel_stats(
     hotel_id: int,

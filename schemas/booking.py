@@ -53,7 +53,7 @@ class BookingOut(BaseModel):
     date_end: date
     room_id: int
     client: ClientOut
-    payment: Optional[PaymentOut]
+    payments: List[PaymentOut]
 
     class Config:
         orm_mode = True
