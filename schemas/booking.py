@@ -28,32 +28,17 @@ class BookingHistoryItem(BaseModel):
     created_at: datetime
     class Config:
         from_attributes = True
-class ClientOut(BaseModel):
-    id: int
-    first_name: str
-    last_name: str
+
+class BookingItem(BaseModel):
+    room_number: int
+    client_name: str
     email: str
-
-    class Config:
-        orm_mode = True
-
-class PaymentOut(BaseModel):
-    id: int
-    amount: float
-    is_card: bool
+    phone: Optional[str]
+    is_card: Optional[bool]
+    amount: Optional[float]
+    period_start: date
+    period_end: date
     status: str
-
-    class Config:
-        orm_mode = True
-
-class BookingOut(BaseModel):
-    id: int
-    status: str
-    date_start: date
-    date_end: date
-    room_id: int
-    client: ClientOut
-    payments: List[PaymentOut]
 
     class Config:
         orm_mode = True
