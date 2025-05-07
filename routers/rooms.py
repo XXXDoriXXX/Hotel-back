@@ -81,8 +81,6 @@ def delete_room(room_id: int, db: Session = Depends(get_db), current_owner = Dep
     hotel = db.query(Hotel).filter(Hotel.id == room.hotel_id).first()
     if not hotel or hotel.owner_id != current_owner.id:
         raise HTTPException(403, "Not authorized")
-    db.query(AmenityRoom).filter(AmenityRoom.room_id == room_id).delete()
-
     db.delete(room)
     db.commit()
     return {"message": "Room deleted successfully"}
