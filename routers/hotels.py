@@ -9,7 +9,7 @@ import os, uuid, boto3
 from database import get_db
 from dependencies import get_current_owner, get_current_user
 from models import Hotel, HotelImg, Address, Room, Booking, Owner, Payment, AmenityHotel, Rating, BookingStatus, \
-    FavoriteHotel, Client
+    FavoriteHotel, Client, Employee
 from schemas.booking import BookingItem
 from schemas.hotel import HotelCreate, HotelBase, HotelImgBase, HotelWithImagesAndAddress, HotelWithStats, \
     HotelSearchParams
@@ -299,7 +299,10 @@ def get_advanced_hotel_stats(
     top_clients = top_clients_q.all()
     rating_avg, total_views = rating_views_q.one()
     favorites = favorites_q.scalar()
+    salary_expenses_q = db.query(func.sum(Employee.salary)).filter(Employee.hotel_id == hotel_id)
+    salary_expenses = salary_expenses_q.scalar() or 0
 
+    net_income = (income_total or 0) - salary_expenses
     return {
         "general": {
             "total_rooms": total_rooms,
@@ -316,7 +319,10 @@ def get_advanced_hotel_stats(
             "refunds": refunds or 0,
             "avg_booking_price": round(avg_price or 0, 2),
             "max_booking_price": max_price or 0,
-            "min_booking_price": min_price or 0
+            "min_booking_price": min_price or 0,
+            "salary_expenses": round(salary_expenses, 2),
+            "net_income": round(net_income, 2),
+            "income_minus_salaries": round(income_total or 0, 2)
         },
         "dynamics": {
             "daily_income": [{"date": d.isoformat(), "total": float(t)} for d, t in daily_income],
