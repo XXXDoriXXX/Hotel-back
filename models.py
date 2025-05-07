@@ -149,7 +149,7 @@ class Booking(Base):
     __tablename__ = 'bookings'
     id = Column(Integer, primary_key=True, autoincrement=True)
     client_id = Column(Integer, ForeignKey('clients.id', ondelete='CASCADE'), nullable=False)
-    room_id = Column(Integer, ForeignKey('rooms.id', ondelete='CASCADE'), nullable=False)
+    room_id = Column(Integer, ForeignKey('rooms.id', ondelete="SET NULL"), nullable=True)
     date_start = Column(DateTime, nullable=False)
     date_end = Column(DateTime, nullable=False)
     status = Column(Enum(BookingStatus), default='pending', nullable=False)
