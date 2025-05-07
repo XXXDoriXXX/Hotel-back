@@ -205,3 +205,10 @@ class FavoriteHotel(Base):
 
     client = relationship("Client", backref="favorite_hotels")
     hotel = relationship("Hotel")
+class SalaryHistory(Base):
+    __tablename__ = "salary_history"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    employee_id = Column(Integer, ForeignKey("employees.id", ondelete="CASCADE"), nullable=False)
+    old_salary = Column(Float, nullable=False)
+    new_salary = Column(Float, nullable=False)
+    changed_at = Column(DateTime, server_default=func.now())
