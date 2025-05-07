@@ -141,8 +141,8 @@ class Room(Base):
     hotel_id = Column(Integer, ForeignKey('hotels.id', ondelete='CASCADE'), nullable=False)
     description = Column(Text)
     hotel = relationship("Hotel", back_populates="rooms")
-    images = relationship("RoomImg", back_populates="room")
-    amenities = relationship("AmenityRoom", back_populates="room")
+    images = relationship("RoomImg", back_populates="room", cascade="all, delete-orphan")
+    amenities = relationship("AmenityRoom", back_populates="room", cascade="all, delete-orphan")
     bookings = relationship("Booking", back_populates="room")
 
 class Booking(Base):
