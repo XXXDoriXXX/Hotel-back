@@ -73,7 +73,11 @@ def get_room(room_id: int, db: Session = Depends(get_db)):
 
 # ---------------- DELETE ROOM ----------------
 @router.delete("/{room_id}")
-def delete_room(room_id: int, db: Session = Depends(get_db), current_owner = Depends(get_current_owner)):
+def delete_room(
+    room_id: int,
+    db: Session = Depends(get_db),
+    current_owner = Depends(get_current_owner)
+):
     room = db.query(Room).filter(Room.id == room_id).first()
     if not room:
         raise HTTPException(404, "Room not found")
@@ -81,9 +85,22 @@ def delete_room(room_id: int, db: Session = Depends(get_db), current_owner = Dep
     hotel = db.query(Hotel).filter(Hotel.id == room.hotel_id).first()
     if not hotel or hotel.owner_id != current_owner.id:
         raise HTTPException(403, "Not authorized")
+
+    room_images = db.query(RoomImg).filter(RoomImg.room_id == room_id).all()
+    for image in room_images:
+        s3_key = image.image_url.split(f"{S3_BUCKET}.s3.{S3_REGION}.amazonaws.com/")[-1]
+        try:
+            s3_client.delete_object(Bucket=S3_BUCKET, Key=s3_key)
+        except Exception:
+            pass
+    db.query(RoomImg).filter(RoomImg.room_id == room_id).delete()
+    db.query(AmenityRoom).filter(AmenityRoom.room_id == room_id).delete()
+
     db.delete(room)
     db.commit()
+
     return {"message": "Room deleted successfully"}
+
 # ---------------- UPDATE ROOM ----------------
 @router.put("/{room_id}", response_model=RoomDetails)
 def update_room(
