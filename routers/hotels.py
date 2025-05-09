@@ -8,6 +8,8 @@ from sqlalchemy import func, extract, case, cast
 from sqlalchemy.orm import Session, joinedload
 from typing import List, Optional
 import os, uuid, boto3
+
+from crud.images import process_and_upload_image
 from database import get_db
 from dependencies import get_current_owner, get_current_user
 from models import Hotel, HotelImg, Address, Room, Booking, Owner, Payment, AmenityHotel, Rating, BookingStatus, \
