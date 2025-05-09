@@ -1,4 +1,6 @@
 from datetime import datetime, timedelta
+from PIL import Image
+from io import BytesIO
 from sqlalchemy import Date
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status, Body, Query
@@ -20,7 +22,8 @@ S3_BUCKET = os.getenv('S3_BUCKET')
 S3_REGION = os.getenv('S3_REGION')
 AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID')
 AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY')
-
+MAX_WIDTH = 1920
+MAX_HEIGHT = 1080
 s3_client = boto3.client(
     's3',
     region_name=S3_REGION,
@@ -133,21 +136,31 @@ async def upload_image(
     if ext not in ["jpg", "jpeg", "png", "webp"]:
         raise HTTPException(400, "Invalid image format")
 
-    filename = f"{uuid.uuid4()}.{ext}"
-    s3_key = f"hotels/{hotel_id}/{filename}"
     try:
+        contents = await file.read()
+        image = Image.open(BytesIO(contents))
+        image = image.convert("RGB")
+        image.thumbnail((MAX_WIDTH, MAX_HEIGHT), Image.LANCZOS)
+
+        buffer = BytesIO()
+        image.save(buffer, format="JPEG", quality=85)
+        buffer.seek(0)
+
+        filename = f"{uuid.uuid4()}.jpg"
+        s3_key = f"hotels/{hotel_id}/{filename}"
+
         s3_client.upload_fileobj(
-            file.file, S3_BUCKET, s3_key,
-            ExtraArgs={
-                "ContentType": file.content_type
-            }
+            buffer, S3_BUCKET, s3_key,
+            ExtraArgs={"ContentType": "image/jpeg"}
         )
+
         url = f"https://{S3_BUCKET}.s3.{S3_REGION}.amazonaws.com/{s3_key}"
-        image = HotelImg(hotel_id=hotel_id, image_url=url)
-        db.add(image)
+        image_db = HotelImg(hotel_id=hotel_id, image_url=url)
+        db.add(image_db)
         db.commit()
-        db.refresh(image)
-        return image
+        db.refresh(image_db)
+        return image_db
+
     except Exception as e:
         raise HTTPException(500, f"Upload failed: {str(e)}")
 
