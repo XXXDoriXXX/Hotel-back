@@ -218,6 +218,33 @@ def get_formatted_bookings(
         })
 
     return result
+@router.get("/my/summary")
+def get_owner_summary(
+    db: Session = Depends(get_db),
+    current_owner = Depends(get_current_owner)
+):
+    hotel_ids_subquery = db.query(Hotel.id).filter(Hotel.owner_id == current_owner.id).subquery()
+
+    booking_count = (
+        db.query(func.count(Booking.id))
+        .join(Room, Room.id == Booking.room_id)
+        .filter(Room.hotel_id.in_(hotel_ids_subquery))
+        .scalar()
+    )
+
+    total_income = (
+        db.query(func.sum(Payment.amount))
+        .join(Booking, Booking.id == Payment.booking_id)
+        .join(Room, Room.id == Booking.room_id)
+        .filter(Room.hotel_id.in_(hotel_ids_subquery), Payment.status == "paid")
+        .scalar()
+    ) or 0
+
+    return {
+        "total_bookings": booking_count,
+        "total_income": round(total_income, 2)
+    }
+
 @router.get("/{hotel_id}/stats/full")
 def get_advanced_hotel_stats(
     hotel_id: int,
