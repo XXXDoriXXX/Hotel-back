@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 import uuid, boto3
 
-
+from crud.images import process_and_upload_image
 from database import get_db
 from dependencies import get_current_owner
 from models import Room, Hotel, RoomImg, AmenityRoom, Booking
@@ -144,27 +144,15 @@ async def upload_room_image(
     if not hotel or hotel.owner_id != current_owner.id:
         raise HTTPException(403, "Not authorized")
 
-    ext = file.filename.split(".")[-1].lower()
-    if ext not in ALLOWED_IMAGE_TYPES:
-        raise HTTPException(400, "Invalid image format")
-
-    filename = f"{uuid.uuid4()}.{ext}"
-    s3_key = f"rooms/{room_id}/{filename}"
-
     try:
-        s3_client.upload_fileobj(
-            file.file,
-            S3_BUCKET,
-            s3_key,
-            ExtraArgs={"ContentType": file.content_type}
-        )
-
-        url = f"https://{S3_BUCKET}.s3.{S3_REGION}.amazonaws.com/{s3_key}"
+        url = process_and_upload_image(file, s3_client, S3_BUCKET, S3_REGION, f"rooms/{room_id}")
         image = RoomImg(room_id=room_id, image_url=url)
         db.add(image)
         db.commit()
         db.refresh(image)
         return image
+    except ValueError as e:
+        raise HTTPException(400, str(e))
     except Exception as e:
         raise HTTPException(500, f"Upload failed: {str(e)}")
 

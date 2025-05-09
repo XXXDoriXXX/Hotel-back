@@ -132,37 +132,18 @@ async def upload_image(
     if not hotel or hotel.owner_id != current_owner.id:
         raise HTTPException(404, "Hotel not found or no access")
 
-    ext = file.filename.split(".")[-1].lower()
-    if ext not in ["jpg", "jpeg", "png", "webp"]:
-        raise HTTPException(400, "Invalid image format")
-
     try:
-        contents = await file.read()
-        image = Image.open(BytesIO(contents))
-        image = image.convert("RGB")
-        image.thumbnail((MAX_WIDTH, MAX_HEIGHT), Image.LANCZOS)
-
-        buffer = BytesIO()
-        image.save(buffer, format="JPEG", quality=85)
-        buffer.seek(0)
-
-        filename = f"{uuid.uuid4()}.jpg"
-        s3_key = f"hotels/{hotel_id}/{filename}"
-
-        s3_client.upload_fileobj(
-            buffer, S3_BUCKET, s3_key,
-            ExtraArgs={"ContentType": "image/jpeg"}
-        )
-
-        url = f"https://{S3_BUCKET}.s3.{S3_REGION}.amazonaws.com/{s3_key}"
+        url = process_and_upload_image(file, s3_client, S3_BUCKET, S3_REGION, f"hotels/{hotel_id}")
         image_db = HotelImg(hotel_id=hotel_id, image_url=url)
         db.add(image_db)
         db.commit()
         db.refresh(image_db)
         return image_db
-
+    except ValueError as e:
+        raise HTTPException(400, str(e))
     except Exception as e:
         raise HTTPException(500, f"Upload failed: {str(e)}")
+
 
 # ---------------- GET HOTEL IMAGES ----------------
 @router.get("/{hotel_id}/images", response_model=List[HotelImgBase])
