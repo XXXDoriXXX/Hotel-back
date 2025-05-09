@@ -86,7 +86,7 @@ class Hotel(Base):
     description = Column(Text)
     address = relationship("Address")
     owner = relationship("Owner", back_populates="hotels")
-    employees = relationship("Employee", back_populates="hotel")
+    employees = relationship("Employee", back_populates="hotel", cascade="all, delete-orphan")
     rooms = relationship("Room", back_populates="hotel")
     images = relationship("HotelImg", back_populates="hotel")
     amenities = relationship("AmenityHotel", back_populates="hotel")
