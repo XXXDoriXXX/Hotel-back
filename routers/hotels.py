@@ -112,15 +112,35 @@ def update_hotel(
     return hotel
 # ---------------- DELETE HOTEL ----------------
 @router.delete("/{hotel_id}")
-def delete_hotel(hotel_id: int, db: Session = Depends(get_db), current_owner = Depends(get_current_owner)):
+def delete_hotel(
+    hotel_id: int,
+    db: Session = Depends(get_db),
+    current_owner = Depends(get_current_owner)
+):
     hotel = db.query(Hotel).filter(Hotel.id == hotel_id).first()
     if not hotel:
         raise HTTPException(404, "Hotel not found")
     if hotel.owner_id != current_owner.id:
         raise HTTPException(403, "You are not the owner of this hotel")
+
+    hotel_images = db.query(HotelImg).filter(HotelImg.hotel_id == hotel_id).all()
+    for image in hotel_images:
+        s3_key = image.image_url.split(f"{S3_BUCKET}.s3.{S3_REGION}.amazonaws.com/")[-1]
+        try:
+            s3_client.delete_object(Bucket=S3_BUCKET, Key=s3_key)
+        except Exception:
+            pass
+
+    db.query(HotelImg).filter(HotelImg.hotel_id == hotel_id).delete()
+
+    address = db.query(Address).filter(Address.id == hotel.address_id).first()
+    if address:
+        db.delete(address)
+
     db.delete(hotel)
     db.commit()
-    return {"message": "Hotel deleted"}
+    return {"message": "Hotel and associated data deleted successfully"}
+
 
 # ---------------- UPLOAD HOTEL IMAGE ----------------
 @router.post("/{hotel_id}/images", response_model=HotelImgBase)

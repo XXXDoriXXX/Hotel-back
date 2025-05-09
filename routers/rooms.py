@@ -86,6 +86,10 @@ def delete_room(
     if not hotel or hotel.owner_id != current_owner.id:
         raise HTTPException(403, "Not authorized")
 
+    bookings = db.query(Booking).filter(Booking.room_id == room.id).all()
+    for booking in bookings:
+        booking.room_number_snapshot = room.room_number
+
     room_images = db.query(RoomImg).filter(RoomImg.room_id == room_id).all()
     for image in room_images:
         s3_key = image.image_url.split(f"{S3_BUCKET}.s3.{S3_REGION}.amazonaws.com/")[-1]
@@ -93,9 +97,9 @@ def delete_room(
             s3_client.delete_object(Bucket=S3_BUCKET, Key=s3_key)
         except Exception:
             pass
+
     db.query(RoomImg).filter(RoomImg.room_id == room_id).delete()
     db.query(AmenityRoom).filter(AmenityRoom.room_id == room_id).delete()
-
     db.delete(room)
     db.commit()
 
