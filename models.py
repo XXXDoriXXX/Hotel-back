@@ -84,13 +84,16 @@ class Hotel(Base):
     address_id = Column(Integer, ForeignKey('addresses.id', ondelete="CASCADE"), nullable=False)
     owner_id = Column(Integer, ForeignKey('owner.id'), nullable=False)
     description = Column(Text)
+
     address = relationship("Address")
     owner = relationship("Owner", back_populates="hotels")
+
     employees = relationship("Employee", back_populates="hotel", cascade="all, delete-orphan")
-    rooms = relationship("Room", back_populates="hotel")
-    images = relationship("HotelImg", back_populates="hotel")
-    amenities = relationship("AmenityHotel", back_populates="hotel")
+    rooms = relationship("Room", back_populates="hotel", cascade="all, delete-orphan")
+    images = relationship("HotelImg", back_populates="hotel", cascade="all, delete-orphan")
+    amenities = relationship("AmenityHotel", back_populates="hotel", cascade="all, delete-orphan")
     ratings = relationship("Rating", back_populates="hotel", cascade="all, delete-orphan")
+    favorite_hotels = relationship("FavoriteHotel", back_populates="hotel", cascade="all, delete-orphan")
 
 
 class Amenity(Base):
@@ -204,6 +207,10 @@ class FavoriteHotel(Base):
     client_id = Column(Integer, ForeignKey("clients.id", ondelete="CASCADE"), nullable=False)
     hotel_id = Column(Integer, ForeignKey("hotels.id", ondelete="CASCADE"), nullable=False)
     created_at = Column(DateTime, server_default=func.now())
+
+    client = relationship("Client", backref="favorite_hotels")
+    hotel = relationship("Hotel", back_populates="favorite_hotels")
+
 
     client = relationship("Client", backref="favorite_hotels")
     hotel = relationship("Hotel")
