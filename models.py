@@ -90,7 +90,8 @@ class Hotel(Base):
     rooms = relationship("Room", back_populates="hotel")
     images = relationship("HotelImg", back_populates="hotel")
     amenities = relationship("AmenityHotel", back_populates="hotel")
-    ratings = relationship("Rating", back_populates="hotel")
+    ratings = relationship("Rating", back_populates="hotel", cascade="all, delete-orphan")
+
 
 class Amenity(Base):
     __tablename__ = 'amenities'
