@@ -22,7 +22,7 @@ app.add_middleware(ProxyHeadersMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:5173",  # локальний фронт
+        "http://localhost:5174",  # локальний фронт
         "https://hotel-back-production-558e.up.railway.app"  # деплой
     ],
     allow_credentials=True,
