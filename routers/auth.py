@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status, Body
 from pydantic import EmailStr
@@ -76,7 +76,10 @@ def login(
 
 
 @router.get("/me")
-def get_current_user(token: str = Depends(oauth2_scheme)):
+def get_current_user_info(token: Optional[str] = Depends(oauth2_scheme)):
+    if not token:
+        raise HTTPException(status_code=401, detail="Authorization token missing")
+
     payload = verify_access_token(token)
     if not payload:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
