@@ -245,7 +245,7 @@ def manual_refund(
     if booking.room.hotel.owner_id != owner.id:
         raise HTTPException(403, "You can refund only your own hotel's bookings")
 
-    payment = db.query(Payment).filter(Payment.booking_id == booking_id, Payment.status == "paid").first()
+    payment = db.query(Payment).filter(Payment.booking_id == booking_id, Payment.status == PaymentStatus.paid).first()
     if not payment:
         raise HTTPException(400, "No paid payment found")
 
@@ -257,10 +257,10 @@ def manual_refund(
             payment_intent=payment.stripe_payment_id,
             amount=int(request.amount * 100)
         )
-        payment.status = "refunded"
+        payment.status = PaymentStatus.refunded
         payment.description = f"Manual refund: ${request.amount}"
         db.commit()
-        return {"refunded": request.amount}
+        return {PaymentStatus.refunded: request.amount}
     except Exception as e:
         db.add(PaymentError(
             payment_id=payment.id,
