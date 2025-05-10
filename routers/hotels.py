@@ -228,8 +228,8 @@ def get_formatted_bookings(
             "phone": b.client.phone,
             "is_card": first_payment.is_card if first_payment else None,
             "amount": first_payment.amount if first_payment else None,
-            "period_start": b.date_start,
-            "period_end": b.date_end,
+            "period_start": b.date_start.date() if b.date_start else None,
+            "period_end": b.date_end.date() if b.date_end else None,
             "status": b.status
         })
 

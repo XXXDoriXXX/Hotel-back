@@ -217,11 +217,11 @@ def request_refund(
             payment_intent=payment.stripe_payment_id,
             amount=refund_cents
         )
-        payment.status = "refunded"
+        payment.status = PaymentStatus.refunded
         payment.description = f"Auto refund: {refund_pct * 100:.0f}%"
-        booking.status = "cancelled"
+        booking.status = BookingStatus.cancelled
         db.commit()
-        return {"refunded": refund_amount}
+        return {PaymentStatus.refunded: refund_amount}
     except Exception as e:
         db.add(PaymentError(
             payment_id=payment.id,
@@ -259,6 +259,7 @@ def manual_refund(
         )
         payment.status = PaymentStatus.refunded
         payment.description = f"Manual refund: ${request.amount}"
+        booking.status = BookingStatus.cancelled
         db.commit()
         return {PaymentStatus.refunded: request.amount}
     except Exception as e:
