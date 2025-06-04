@@ -21,8 +21,8 @@ AMENITIES = [
 for amenity in AMENITIES:
     res = requests.post(API_URL, json=amenity)
     if res.status_code == 201:
-        print(f"✅ Added: {amenity['name']}")
+        print(f"Added: {amenity['name']}")
     elif res.status_code == 409:
-        print(f"⚠️ Already exists: {amenity['name']}")
+        print(f"Already exists: {amenity['name']}")
     else:
-        print(f"❌ Failed: {amenity['name']} - {res.status_code} - {res.text}")
+        print(f"Failed: {amenity['name']} - {res.status_code} - {res.text}")
