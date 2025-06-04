@@ -30,7 +30,6 @@ class EntityType(enum.Enum):
     icon = "icon"
     avatar = "avatar"
 
-# Models
 class Address(Base):
     __tablename__ = 'addresses'
     id = Column(Integer, primary_key=True, autoincrement=True)

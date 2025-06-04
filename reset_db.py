@@ -8,9 +8,7 @@ with engine.connect() as conn:
     conn.execute(text("CREATE SCHEMA public"))
     conn.commit()
 
-print("💥 Schema dropped and recreated.")
-
-# Імпортуй Base тільки після дропа
+print("Schema dropped and recreated.")
 from models import Base
 
 Base.metadata.create_all(bind=engine)
