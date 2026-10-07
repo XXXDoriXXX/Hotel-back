@@ -84,6 +84,7 @@ pytest
 | Variable | Required | Description |
 | --- | --- | --- |
 | `DATABASE_URL` | yes | SQLAlchemy URL, for example `postgresql://user:password@localhost:5432/hotel_db` |
+| `JWT_SECRET` | yes | Secret used to sign JWT tokens, the app will not start without it |
 | `STRIPE_SECRET_KEY` | yes | Stripe secret API key |
 | `STRIPE_WEBHOOK_SECRET` | yes | Signing secret of the Stripe webhook endpoint |
 | `STRIPE_DOMAIN` | no | Frontend URL used for Stripe redirects, default `http://localhost:5173` |
